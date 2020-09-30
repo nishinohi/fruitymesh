@@ -37,6 +37,7 @@
 #include "EnrollmentModule.h"
 #include "IoModule.h"
 #include "MeshAccessModule.h"
+#include "CellularModule.h"
 #include "GlobalState.h"
 
 void setBoardConfiguration_github_nrf52(BoardConfiguration* c)
@@ -44,6 +45,7 @@ void setBoardConfiguration_github_nrf52(BoardConfiguration* c)
     //Additional boards can be put in here to be selected at runtime
     //BoardConfiguration* c = (BoardConfiguration*)config;
     //e.g. setBoard_123(c);
+    c->uartBaudRate = (u32)FruityHal::UartBaudrate::BAUDRATE_115200;
 }
 
 void setFeaturesetConfiguration_github_nrf52(ModuleConfiguration* config, void* module)
@@ -74,6 +76,7 @@ u32 initializeModules_github_nrf52(bool createModule)
     size += GS->InitializeModule<EnrollmentModule>(createModule);
     size += GS->InitializeModule<IoModule>(createModule);
     size += GS->InitializeModule<MeshAccessModule>(createModule);
+    size += GS->InitializeModule<CellularModule>(createModule);
     return size;
 }
 

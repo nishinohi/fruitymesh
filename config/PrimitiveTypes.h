@@ -163,7 +163,7 @@ enum class ModuleId : u8 {
 
     //Other Modules
     MY_CUSTOM_MODULE = 200,
-    PING_MODULE = 201,
+    CELLULAR_MODULE = 201,
     TEMPLATE_MODULE = 202,
     SIG_EXAMPLE_MODULE = 203,
 
