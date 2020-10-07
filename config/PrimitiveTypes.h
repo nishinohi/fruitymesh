@@ -411,6 +411,13 @@ enum class LedMode : u8 {
     CUSTOM = 6, // Led controlled by a specific module
 };
 
+// Line feed code
+enum class LineFeedCode: u8 {
+    CR = 0,
+    LF = 1,
+    CRLF = 2,
+};
+
 //DFU ERROR CODES
 enum class DfuStartDfuResponseCode : u8
 {
