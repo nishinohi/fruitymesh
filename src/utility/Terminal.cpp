@@ -582,24 +582,31 @@ void Terminal::UartReadLineBlocking()
         {
             //Display entered character in terminal
             UartPutCharBlockingWithTimeout(byteBuffer);
-
-            if (byteBuffer == '\r' || readBufferOffset >= TERMINAL_READ_BUFFER_LENGTH - 1)
-            {
-                readBuffer[readBufferOffset] = '\0';
-                UartPutStringBlockingWithTimeout(EOL);
-                if(readBufferOffset > 0){
-                    FruityHal::SetPendingEventIRQ();
-                    lineToReadAvailable = true;
-                    // => Will then be processed in the main event handler
-                }
-                break;
+            bool isGetLine = false;
+            const LineFeedCode lineFeedCode = Conf::getInstance().lineFeedCode;
+            if (lineFeedCode == LineFeedCode::CRLF && readBufferOffset > 0) {
+                isGetLine = ((byteBuffer == '\n' && readBuffer[readBufferOffset - 1] == '\r') ||
+                             readBufferOffset >= TERMINAL_READ_BUFFER_LENGTH - 2);
+            } else {
+                const char lineFeedCodeChar = lineFeedCode == LineFeedCode::CR ? '\r' : '\n';
+                isGetLine = (byteBuffer == lineFeedCodeChar || readBufferOffset >= TERMINAL_READ_BUFFER_LENGTH - 1);
             }
-            else
-            {
+            if (!isGetLine) {
                 CheckedMemcpy(readBuffer + readBufferOffset, &byteBuffer, sizeof(u8));
+                ++readBufferOffset;
+                continue;
             }
-
-            readBufferOffset++;
+            if (lineFeedCode == LineFeedCode::CRLF) {
+                --readBufferOffset;
+            }
+            readBuffer[readBufferOffset] = '\0';
+            UartPutStringBlockingWithTimeout(EOL);
+            if (readBufferOffset > 0) {
+                FruityHal::SetPendingEventIRQ();
+                lineToReadAvailable = true;
+                // => Will then be processed in the main event handler
+            }
+            break;
         }
     }
 #endif

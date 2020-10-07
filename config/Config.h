@@ -406,6 +406,8 @@ class Conf
 
         //Configures whether the terminal will start in interactive mode or not
         TerminalMode terminalMode : 8;
+        //Configures which line feed code use. crlf(\r\n) or cr(\r)
+        LineFeedCode lineFeedCode = LineFeedCode::CR;
 
         bool enableSinkRouting = false;
         // ########### TIMINGS ################################################
