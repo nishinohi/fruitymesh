@@ -401,6 +401,20 @@ TerminalCommandHandlerReturnType Logger::TerminalCommandHandler(const char* comm
         }
 
         return TerminalCommandHandlerReturnType::SUCCESS;
+    } else if (TERMARGS(0, "linefeed") && commandArgsSize >= 2) {
+        if (TERMARGS(1, "crlf")) {
+            Conf::getInstance().lineFeedCode = LineFeedCode::CRLF;
+            return TerminalCommandHandlerReturnType::SUCCESS;
+        } else if (TERMARGS(1, "cr")) {
+            Conf::getInstance().lineFeedCode = LineFeedCode::CR;
+            return TerminalCommandHandlerReturnType::SUCCESS;
+        } else if (TERMARGS(1, "lf")) {
+            Conf::getInstance().lineFeedCode = LineFeedCode::LF;
+            return TerminalCommandHandlerReturnType::SUCCESS;
+        }
+        return TerminalCommandHandlerReturnType::WRONG_ARGUMENT;
+    } else if (TERMARGS(0, "linefeed") && commandArgsSize < 2) {
+        return TerminalCommandHandlerReturnType::NOT_ENOUGH_ARGUMENTS;
     }
 
 #endif
