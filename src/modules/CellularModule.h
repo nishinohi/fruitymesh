@@ -58,7 +58,7 @@ class CellularModule : public Module {
     typedef void (CellularModule::*AtCommandCallback)();
 
     typedef struct {
-        u16 timeoutDs;
+        u8 timeoutDs;
         AtCommandCallback commandCallback;
         AtCommandCallback timeoutCallback;
     } ResponseCallback;
@@ -92,9 +92,9 @@ class CellularModule : public Module {
     void InitializeResponseCallback(ResponseCallback* responseCallBack);
 
     void ProcessAtCommands(u16 passedTimeDs);
-    bool PushAtCommand(const char* atCommand, const char* response, const char timeoutDs,
-                       const AtCommandCallback& commandCallBack = nullptr,
-                       const AtCommandCallback& timeoutCallBack = nullptr);
+    bool PushAtCommandAndResponseQueue(const char* atCommand, const char* response, const u8& timeoutDs,
+                                       const AtCommandCallback& commandCallBack = nullptr,
+                                       const AtCommandCallback& timeoutCallBack = nullptr);
 
     void SupplyPower();
     void ProcessWakeup(u16 passedTimeDs);

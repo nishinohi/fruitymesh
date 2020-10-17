@@ -102,26 +102,29 @@ void CellularModule::ProcessAtCommands(u16 passedTimeDs) {
     // atCommandPassedTimeDs = 0;
 }
 
-bool CellularModule::PushAtCommand(const char* atCommand, const char* response, const char timeoutDs,
-                                   const AtCommandCallback& commandCallBack, const AtCommandCallback& timeoutCallBack) {
-    // if (atCommandStackSize >= atCommandStackMaxSize) {
-    //   return false;
-    // }
-    // AtCommand& newAtCommand = atCommandStack[atCommandStackSize];
-    // CheckedMemset(&(newAtCommand), 0x00, sizeof(AtCommand));
-    // if (atCommand != NULL && strlen(atCommand) > 0) {
-    //     if (strlen(atCommand) > atCommandMaxLen - 1) {
-    //         return false;
-    //     }
-    //     CheckedMemcpy(newAtCommand.atCommand, atCommand, strlen(atCommand));
-    // }
-    // if (atCommand != NULL && strlen(atCommand) > 0) {
-    //   if (strlen(response) < responseMaxLen - 1) {
-    //     return false;
-    //   }
-    //   CheckedMemcpy(newAtCommand.response, response, strlen(response));
-    // }
-    // ++atCommandStackSize;
+bool CellularModule::PushAtCommandAndResponseQueue(const char* atCommand, const char* response, const u8& timeoutDs,
+                                                   const AtCommandCallback& commandCallBack,
+                                                   const AtCommandCallback& timeoutCallBack) {
+    // Queue ATCommand and response
+    if (atCommand == NULL || strlen(atCommand) < 1) { return false; }
+    bool isQueued = atCommandQueue.Put(reinterpret_cast<u8*>(const_cast<char*>(atCommand)), strlen(atCommand));
+    if (!isQueued) { return false; }
+    if (response == NULL || strlen(response) < 1) { return false; }
+    isQueued = responseQueue.Put(reinterpret_cast<u8*>(const_cast<char*>(response)), strlen(response));
+    if (!isQueued) {
+        atCommandQueue.DiscardLast();
+        return false;
+    }
+    // Queue ResponseCallback
+    ResponseCallback responseCallback = {.timeoutDs = timeoutDs,
+                                         .commandCallback = commandCallBack == NULL ? nullptr : commandCallBack,
+                                         .timeoutCallback = timeoutCallBack == NULL ? nullptr : timeoutCallBack};
+    isQueued = responseQueue.Put(reinterpret_cast<u8*>(&responseCallback), sizeof(ResponseCallback));
+    if (!isQueued) {
+        atCommandQueue.DiscardLast();
+        responseQueue.DiscardLast();
+        return false;
+    }
     return true;
 }
 
@@ -143,9 +146,7 @@ void CellularModule::TurnOn() {
 
 // EC21 wakes up by toggling POWERKEY PIN to low at least 200msec
 void CellularModule::ProcessWakeup(u16 passedTimeDs) {
-    if (wakeupSignalPassedTime < 0) {
-        return;
-    }
+    if (wakeupSignalPassedTime < 0) { return; }
     if (wakeupSignalPassedTime < wakeupSignalTimeDs) {
         wakeupSignalPassedTime += passedTimeDs;
         return;
@@ -223,8 +224,7 @@ void CellularModule::MeshMessageReceivedHandler(BaseConnection* connection, Base
 
         // Check if our module is meant and we should trigger an action
         if (packet->moduleId == moduleId) {
-            if (packet->actionType == CellularModuleActionResponseMessages::MESSAGE_0_RESPONSE) {
-            }
+            if (packet->actionType == CellularModuleActionResponseMessages::MESSAGE_0_RESPONSE) {}
         }
     }
 }
