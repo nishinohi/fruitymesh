@@ -206,6 +206,7 @@ void BootFruityMesh()
 //    Logger::getInstance().enableTag("IOMOD");
 //    Logger::getInstance().enableTag("SCANMOD");
    Logger::getInstance().enableTag("CELLMOD");
+   Logger::getInstance().enableTag("CELLSEND");
     Logger::getInstance().enableTag("DFUMOD");
     Logger::getInstance().enableTag("CLCMOD");
     Logger::getInstance().enableTag("MAMOD");
