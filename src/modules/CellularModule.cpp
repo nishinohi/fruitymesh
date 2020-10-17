@@ -39,51 +39,51 @@
 
 constexpr u8 CELLULAR_MODULE_CONFIG_VERSION = 1;
 
-CellularModule::CellularModule() : Module(ModuleId::CELLULAR_MODULE, "cellular"),
-  atCommandQueue(atCommandBuffer, ATCOMMAND_BUFFER),
-  responseQueue(responseBuffer, RESPONSE_BUFFER)
-  {
-  // Register callbacks n' stuff
+CellularModule::CellularModule()
+    : Module(ModuleId::CELLULAR_MODULE, "cellular"),
+      atCommandQueue(atCommandBuffer, ATCOMMAND_BUFFER),
+      responseQueue(responseBuffer, RESPONSE_BUFFER) {
+    // Register callbacks n' stuff
 
-  // Save configuration to base class variables
-  // sizeof configuration must be a multiple of 4 bytes
-  configurationPointer = &configuration;
-  configurationLength = sizeof(CellularModuleConfiguration);
+    // Save configuration to base class variables
+    // sizeof configuration must be a multiple of 4 bytes
+    configurationPointer = &configuration;
+    configurationLength = sizeof(CellularModuleConfiguration);
 
-  // Set defaults
-   ResetToDefaultConfiguration();
+    // Set defaults
+    ResetToDefaultConfiguration();
 }
 
 void CellularModule::ResetToDefaultConfiguration() {
-  // Set default configuration values
-  configuration.moduleId = moduleId;
-  configuration.moduleActive = true;
-  configuration.moduleVersion = CELLULAR_MODULE_CONFIG_VERSION;
-  // Set additional config values...
-  configuration.atcommandMode = false;
-  // atCommandStack reset
+    // Set default configuration values
+    configuration.moduleId = moduleId;
+    configuration.moduleActive = true;
+    configuration.moduleVersion = CELLULAR_MODULE_CONFIG_VERSION;
+    // Set additional config values...
+    configuration.atcommandMode = false;
+    // atCommandStack reset
 }
 
 void CellularModule::ConfigurationLoadedHandler(ModuleConfiguration* migratableConfig, u16 migratableConfigLength) {
-  // Version migration can be added here, e.g. if module has version 2 and config is version 1
-  if (migratableConfig->moduleVersion == 1) { /* ... */
-  };
+    // Version migration can be added here, e.g. if module has version 2 and config is version 1
+    if (migratableConfig->moduleVersion == 1) { /* ... */
+    };
 
-  // Do additional initialization upon loading the config
+    // Do additional initialization upon loading the config
 
-  // Start the Module...
+    // Start the Module...
 }
 
 void CellularModule::TimerEventHandler(u16 passedTimeDs) {
-  // Do stuff on timer...
-  ProcessWakeup(passedTimeDs);
-  ProcessAtCommands(passedTimeDs);
+    // Do stuff on timer...
+    ProcessWakeup(passedTimeDs);
+    ProcessAtCommands(passedTimeDs);
 }
 
 void CellularModule::InitializeResponseCallback(ResponseCallback* responseCallBack) {
-  responseCallBack->timeoutDs = 0;
-  responseCallBack->commandCallback = nullptr;
-  responseCallBack->timeoutCallback = nullptr;
+    responseCallBack->timeoutDs = 0;
+    responseCallBack->commandCallback = nullptr;
+    responseCallBack->timeoutCallback = nullptr;
 }
 
 void CellularModule::ProcessAtCommands(u16 passedTimeDs) {
@@ -125,14 +125,14 @@ bool CellularModule::PushAtCommand(const char* atCommand, const char* response, 
     return true;
 }
 
-void CellularModule::Initialize() { 
-  SupplyPower();
-  TurnOn();
+void CellularModule::Initialize() {
+    SupplyPower();
+    TurnOn();
 }
 
 void CellularModule::SupplyPower() {
-  FruityHal::GpioConfigureOutput(POWERSUPPLY_PIN);
-  FruityHal::GpioPinSet(POWERSUPPLY_PIN);
+    FruityHal::GpioConfigureOutput(POWERSUPPLY_PIN);
+    FruityHal::GpioPinSet(POWERSUPPLY_PIN);
 }
 
 void CellularModule::TurnOn() {
@@ -143,93 +143,88 @@ void CellularModule::TurnOn() {
 
 // EC21 wakes up by toggling POWERKEY PIN to low at least 200msec
 void CellularModule::ProcessWakeup(u16 passedTimeDs) {
-  if (wakeupSignalPassedTime < 0) {
-    return;
-  }
-  if (wakeupSignalPassedTime < wakeupSignalTimeDs) {
-    wakeupSignalPassedTime += passedTimeDs;
-    return;
-  }
-  FruityHal::GpioPinClear(POWERKEY_PIN);
-  wakeupSignalPassedTime = -1;
-
+    if (wakeupSignalPassedTime < 0) {
+        return;
+    }
+    if (wakeupSignalPassedTime < wakeupSignalTimeDs) {
+        wakeupSignalPassedTime += passedTimeDs;
+        return;
+    }
+    FruityHal::GpioPinClear(POWERKEY_PIN);
+    wakeupSignalPassedTime = -1;
 }
 
-void CellularModule::Activate() {
-  configuration.activated = true;
-}
+void CellularModule::Activate() { configuration.activated = true; }
 
 #if IS_ACTIVE(BUTTONS)
-void CellularModule::ButtonHandler(u8 buttonId, u32 holdTime) {
-  logs("button pressed");
-}
+void CellularModule::ButtonHandler(u8 buttonId, u32 holdTime) { logs("button pressed"); }
 #endif
 
 #ifdef TERMINAL_ENABLED
 TerminalCommandHandlerReturnType CellularModule::TerminalCommandHandler(const char* commandArgs[], u8 commandArgsSize) {
-  if (TERMARGS(0, "cellularsend")) {
-    logt(CELLSEND_TAG, "Trying to send data by cellular module");
-    Initialize();
-    return TerminalCommandHandlerReturnType::SUCCESS;
-  }
-  if (TERMARGS(0, "cellularmod")) {
-    NodeId targetNodeId = Utility::StringToU16(commandArgs[0]);
-    logt("CELLMOD", "Trying to cellular node %u", targetNodeId);
-
-    u8 data[1];
-    data[0] = 123;
-
-    // send some packets
-    SendModuleActionMessage(MessageType::MODULE_TRIGGER_ACTION, targetNodeId,
-                            CellularModuleTriggerActionMessages::TRIGGER_CELLULAR, 0, data,
-                            sizeof(data) / sizeof(data[0]), false);
-
-    return TerminalCommandHandlerReturnType::SUCCESS;
-  }
-  // React on commands, return true if handled, false otherwise
-  if (commandArgsSize >= 3 && TERMARGS(2, moduleName)) {
-    if (TERMARGS(0, "action")) {
-      if (!TERMARGS(2, moduleName)) return TerminalCommandHandlerReturnType::UNKNOWN;
-
-      if (commandArgsSize >= 4 && TERMARGS(3, "argument_a")) {
+    if (TERMARGS(0, "cellularsend")) {
+        logt(CELLSEND_TAG, "Trying to send data by cellular module");
+        Initialize();
         return TerminalCommandHandlerReturnType::SUCCESS;
-      } else if (commandArgsSize >= 4 && TERMARGS(3, "argument_b")) {
-        return TerminalCommandHandlerReturnType::SUCCESS;
-      }
-
-      return TerminalCommandHandlerReturnType::UNKNOWN;
     }
-  }
+    if (TERMARGS(0, "cellularmod")) {
+        NodeId targetNodeId = Utility::StringToU16(commandArgs[0]);
+        logt("CELLMOD", "Trying to cellular node %u", targetNodeId);
 
-  // Must be called to allow the module to get and set the config
-  return Module::TerminalCommandHandler(commandArgs, commandArgsSize);
+        u8 data[1];
+        data[0] = 123;
+
+        // send some packets
+        SendModuleActionMessage(MessageType::MODULE_TRIGGER_ACTION, targetNodeId,
+                                CellularModuleTriggerActionMessages::TRIGGER_CELLULAR, 0, data,
+                                sizeof(data) / sizeof(data[0]), false);
+
+        return TerminalCommandHandlerReturnType::SUCCESS;
+    }
+    // React on commands, return true if handled, false otherwise
+    if (commandArgsSize >= 3 && TERMARGS(2, moduleName)) {
+        if (TERMARGS(0, "action")) {
+            if (!TERMARGS(2, moduleName)) return TerminalCommandHandlerReturnType::UNKNOWN;
+
+            if (commandArgsSize >= 4 && TERMARGS(3, "argument_a")) {
+                return TerminalCommandHandlerReturnType::SUCCESS;
+            } else if (commandArgsSize >= 4 && TERMARGS(3, "argument_b")) {
+                return TerminalCommandHandlerReturnType::SUCCESS;
+            }
+
+            return TerminalCommandHandlerReturnType::UNKNOWN;
+        }
+    }
+
+    // Must be called to allow the module to get and set the config
+    return Module::TerminalCommandHandler(commandArgs, commandArgsSize);
 }
 #endif
 
 void CellularModule::MeshMessageReceivedHandler(BaseConnection* connection, BaseConnectionSendData* sendData,
                                                 connPacketHeader const* packetHeader) {
-  // Must call superclass for handling
-  Module::MeshMessageReceivedHandler(connection, sendData, packetHeader);
+    // Must call superclass for handling
+    Module::MeshMessageReceivedHandler(connection, sendData, packetHeader);
 
-  if (packetHeader->messageType == MessageType::MODULE_TRIGGER_ACTION) {
-    connPacketModule const* packet = (connPacketModule const*)packetHeader;
+    if (packetHeader->messageType == MessageType::MODULE_TRIGGER_ACTION) {
+        connPacketModule const* packet = (connPacketModule const*)packetHeader;
 
-    // Check if our module is meant and we should trigger an action
-    if (packet->moduleId == moduleId) {
-      if (packet->actionType == CellularModuleTriggerActionMessages::TRIGGER_CELLULAR) {
-        logt("CELLMOD", "Cellular request received with data:%d", packet->data[0]);
-      }
+        // Check if our module is meant and we should trigger an action
+        if (packet->moduleId == moduleId) {
+            if (packet->actionType == CellularModuleTriggerActionMessages::TRIGGER_CELLULAR) {
+                logt("CELLMOD", "Cellular request received with data:%d", packet->data[0]);
+            }
+        }
     }
-  }
 
-  // Parse Module responses
-  if (packetHeader->messageType == MessageType::MODULE_ACTION_RESPONSE) {
-    connPacketModule const* packet = (connPacketModule const*)packetHeader;
+    // Parse Module responses
+    if (packetHeader->messageType == MessageType::MODULE_ACTION_RESPONSE) {
+        connPacketModule const* packet = (connPacketModule const*)packetHeader;
 
-    // Check if our module is meant and we should trigger an action
-    if (packet->moduleId == moduleId) {
-      if (packet->actionType == CellularModuleActionResponseMessages::MESSAGE_0_RESPONSE) {
-      }
+        // Check if our module is meant and we should trigger an action
+        if (packet->moduleId == moduleId) {
+            if (packet->actionType == CellularModuleActionResponseMessages::MESSAGE_0_RESPONSE) {
+            }
+        }
     }
-  }
 }

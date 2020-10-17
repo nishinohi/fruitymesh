@@ -93,7 +93,8 @@ class CellularModule : public Module {
 
     void ProcessAtCommands(u16 passedTimeDs);
     bool PushAtCommand(const char* atCommand, const char* response, const char timeoutDs,
-                       const AtCommandCallback& commandCallBack = nullptr, const AtCommandCallback& timeoutCallBack = nullptr);
+                       const AtCommandCallback& commandCallBack = nullptr,
+                       const AtCommandCallback& timeoutCallBack = nullptr);
 
     void SupplyPower();
     void ProcessWakeup(u16 passedTimeDs);
