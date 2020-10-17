@@ -31,53 +31,94 @@
 #pragma once
 
 #include <Module.h>
+#include <PacketQueue.h>
+
+#define ATCOMMAND_BUFFER 1024
+#define RESPONSE_BUFFER 256
 
 /*
  * This is a cellular for a FruityMesh module.
  * A comment should be here to provide a least a short description of its purpose.
  */
 class CellularModule : public Module {
- private:
-  // Module configuration that is saved persistently (size must be multiple of 4)
-  struct CellularModuleConfiguration : ModuleConfiguration {
-    // Insert more persistent config values here
-  };
+   private:
+    // Module configuration that is saved persistently (size must be multiple of 4)
+    struct CellularModuleConfiguration : ModuleConfiguration {
+        bool atcommandMode;
+        bool activated;
+        // Insert more persistent config values here
+    };
 
-  CellularModuleConfiguration configuration;
+    u32 atCommandBuffer[ATCOMMAND_BUFFER / sizeof(u32)] = {};
+    u32 responseBuffer[RESPONSE_BUFFER / sizeof(u32)] = {};
+    PacketQueue atCommandQueue;
+    PacketQueue responseQueue;
+    u16 responsePassedTimeDs = 0;
 
-  enum CellularModuleTriggerActionMessages { TRIGGER_CELLULAR = 0 };
+    typedef void (CellularModule::*AtCommandCallback)();
 
-  enum CellularModuleActionResponseMessages { MESSAGE_0_RESPONSE = 0 };
+    typedef struct {
+        u16 timeoutDs;
+        AtCommandCallback commandCallback;
+        AtCommandCallback timeoutCallback;
+    } ResponseCallback;
 
-  /*
-  //####### Module messages (these need to be packed)
-  #pragma pack(push)
-  #pragma pack(1)
+    // wakeupSignal
+    static constexpr u8 wakeupSignalTimeDs = 2;  // 200msec
+    char wakeupSignalPassedTime = -1;
 
-      #define SIZEOF_CELLULAR_MODULE_***_MESSAGE 10
-      typedef struct
-      {
-          //Insert values here
+    CellularModuleConfiguration configuration;
 
-      }CellularModule***Message;
+    enum CellularModuleTriggerActionMessages { TRIGGER_CELLULAR = 0 };
 
-  #pragma pack(pop)
-  //####### Module messages end
-  */
+    enum CellularModuleActionResponseMessages { MESSAGE_0_RESPONSE = 0 };
 
- public:
-  CellularModule();
+    /*
+    //####### Module messages (these need to be packed)
+    #pragma pack(push)
+    #pragma pack(1)
 
-  void ConfigurationLoadedHandler(ModuleConfiguration* migratableConfig, u16 migratableConfigLength) override;
+        #define SIZEOF_CELLULAR_MODULE_***_MESSAGE 10
+        typedef struct
+        {
+            //Insert values here
 
-  void ResetToDefaultConfiguration() override;
+        }CellularModule***Message;
 
-  void TimerEventHandler(u16 passedTimeDs) override;
+    #pragma pack(pop)
+    //####### Module messages end
+    */
 
-  void MeshMessageReceivedHandler(BaseConnection* connection, BaseConnectionSendData* sendData,
-                                  connPacketHeader const* packetHeader) override;
+    void InitializeResponseCallback(ResponseCallback* responseCallBack);
+
+    void ProcessAtCommands(u16 passedTimeDs);
+    bool PushAtCommand(const char* atCommand, const char* response, const char timeoutDs,
+                       const AtCommandCallback& commandCallBack = nullptr, const AtCommandCallback& timeoutCallBack = nullptr);
+
+    void SupplyPower();
+    void ProcessWakeup(u16 passedTimeDs);
+
+   public:
+    CellularModule();
+
+    void ConfigurationLoadedHandler(ModuleConfiguration* migratableConfig, u16 migratableConfigLength) override;
+
+    void ResetToDefaultConfiguration() override;
+
+    void TimerEventHandler(u16 passedTimeDs) override;
+
+    void MeshMessageReceivedHandler(BaseConnection* connection, BaseConnectionSendData* sendData,
+                                    connPacketHeader const* packetHeader) override;
+    void Initialize();
+    void TurnOn();
+    void TurnOff();
+    void Activate();
 
 #ifdef TERMINAL_ENABLED
-  TerminalCommandHandlerReturnType TerminalCommandHandler(const char* commandArgs[], u8 commandArgsSize) override;
+    TerminalCommandHandlerReturnType TerminalCommandHandler(const char* commandArgs[], u8 commandArgsSize) override;
+#endif
+
+#if IS_ACTIVE(BUTTONS)
+    void ButtonHandler(u8 buttonId, u32 holdTime) override final;
 #endif
 };
