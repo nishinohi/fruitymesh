@@ -50,6 +50,7 @@ class CellularModule : public Module {
     // Cellular Module Status
     enum ModuleStatus {
         SHUTDOWN = 0,
+        POWER_SUPPLY,
         WAKINGUP,
         WAKEUPED,
         SIM_ACTIVATED,
@@ -117,13 +118,19 @@ class CellularModule : public Module {
     // warning: receive char pointer does not contain '\0'.
     char* GetResponseStr() const { return (char*)responseQueue.PeekNext().data; };
     u16 GetResponseStrLength() const { return responseQueue.PeekNext().length; }
-    ResponseCallback* GetResponseCallback() const {
-        return reinterpret_cast<ResponseCallback*>(atCommandQueue.PeekNext(1).data);
+    u16 GetResponseTimeoutDs() const {
+        return reinterpret_cast<ResponseCallback*>(responseQueue.PeekNext(1).data)->timeoutDs;
+    }
+    AtCommandCallback GetResponseCallback() const {
+        return reinterpret_cast<ResponseCallback*>(responseQueue.PeekNext(1).data)->responseCallback;
+    }
+    AtCommandCallback GetTimeoutCallback() const {
+        return reinterpret_cast<ResponseCallback*>(responseQueue.PeekNext(1).data)->timeoutCallback;
     }
     void DiscardResponseQueue();
     // queue util
-    bool IsEmptyQueue(const PacketQueue& queue) { return queue._numElements > 0; }
-    bool IsValidResponseQueue() { return atCommandQueue._numElements % 2 == 0; }
+    bool IsEmptyQueue(const PacketQueue& queue) { return queue._numElements == 0; }
+    bool IsValidResponseQueue() { return responseQueue._numElements % 2 == 0; }
 
     // AT Command Queue and Process
     bool PushAtCommandQueue(const char* atCommand);

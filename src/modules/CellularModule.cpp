@@ -64,11 +64,10 @@ void CellularModule::ResetToDefaultConfiguration() {
     configuration.moduleActive = true;
     configuration.moduleVersion = CELLULAR_MODULE_CONFIG_VERSION;
     // Set additional config values...
-    // atCommandStack reset
     // PushAtCommandQueue("test1", 5);
-    // PushResponseQueue("test1", 5, 100, nullptr, &CellularModule::DefaultResponseTimeout);
+    // PushResponseQueue("test1", 50, nullptr, &CellularModule::DefaultResponseTimeout);
     // PushAtCommandQueue("test2", 5);
-    // PushResponseQueue("test2", 5, 100, nullptr, &CellularModule::DefaultResponseTimeout);
+    // PushResponseQueue("test2", 50, nullptr, &CellularModule::DefaultResponseTimeout);
 }
 
 void CellularModule::ConfigurationLoadedHandler(ModuleConfiguration* migratableConfig, u16 migratableConfigLength) {
@@ -100,12 +99,13 @@ void CellularModule::DiscardResponseQueue() {
 }
 
 void CellularModule::ProcessAtCommandQueue() {
-    if (!IsEmptyQueue(atCommandQueue)) { return; }
+    if (IsEmptyQueue(atCommandQueue)) { return; }
     u16 atCommandLen = GetAtCommandStrLength();
     char atCommand[atCommandLen + 1];
     CheckedMemset(atCommand, '\0', atCommandLen);
     CheckedMemcpy(atCommand, GetAtCommandStr(), atCommandLen);
     GS->terminal.PutString(atCommand);
+    logt(CELLSEND_TAG, "send AT Command:%s", atCommand);
     DiscardAtCommandQueue();
 }
 
@@ -135,21 +135,22 @@ bool CellularModule::PushResponseQueue(const char* response, const u8& timeoutDs
 }
 
 void CellularModule::ProcessResponseTimeout(u16 passedTimeDs) {
-    if (!IsEmptyQueue(responseQueue)) { return; }
+    if (IsEmptyQueue(responseQueue)) { return; }
     // TODO: fatal error
     if (!IsValidResponseQueue()) { return; }
-    ResponseCallback* responseCallback = GetResponseCallback();
-    if (responsePassedTimeDs > responseCallback->timeoutDs) {
-        (this->*(responseCallback->timeoutCallback))();
-        responsePassedTimeDs = 0;
-        DiscardResponseQueue();
+    if (responsePassedTimeDs < GetResponseTimeoutDs()) {
+        responsePassedTimeDs += passedTimeDs;
         return;
     }
-    responsePassedTimeDs += passedTimeDs;
+    AtCommandCallback timeoutCallback = GetTimeoutCallback();
+    if (timeoutCallback != nullptr) { (this->*(timeoutCallback))(); }
+    responsePassedTimeDs = 0;
+    DiscardResponseQueue();
+    return;
 }
 
 void CellularModule::ProcessResponseQueue(const char* arg) {
-    if (!IsEmptyQueue(responseQueue)) { return; }
+    if (IsEmptyQueue(responseQueue)) { return; }
     // TODO: fatal error
     if (!IsValidResponseQueue()) { return; }
     u16 responseStrLen = GetResponseStrLength();
@@ -157,18 +158,21 @@ void CellularModule::ProcessResponseQueue(const char* arg) {
     CheckedMemset(response, '\0', responseStrLen + 1);
     CheckedMemcpy(response, GetResponseStr(), responseStrLen);
     // TODO: notice response success
-    if (strncmp(response, arg, responseStrLen) == 0) { DiscardResponseQueue(); }
+    if (strncmp(response, arg, responseStrLen) == 0) {
+        logt(CELLSEND_TAG, "get response:%s", response);
+        DiscardResponseQueue();
+    }
 }
 
 void CellularModule::DefaultResponseTimeout() {
-    switch (status) {
-        case WAKINGUP:
-            status = SHUTDOWN;
-            break;
-        default:
-            break;
-    }
-    logt(CELLSEND_TAG, "AT Command response timeout.");
+    // switch (status) {
+    //     case WAKINGUP:
+    //         status = SHUTDOWN;
+    //         break;
+    //     default:
+    //         break;
+    // }
+    logt(CELLSEND_TAG, "AT Command response timeout");
 }
 
 void CellularModule::Initialize() {
@@ -185,20 +189,21 @@ void CellularModule::TurnOn() {
     FruityHal::GpioConfigureOutput(POWERKEY_PIN);
     FruityHal::GpioPinSet(POWERKEY_PIN);
     wakeupSignalPassedTime = 0;
-    status = WAKINGUP;
+    status = POWER_SUPPLY;
 }
 
 // Toggle POWERKEY PIN high to low at least 200msec to send waking up signal.
 void CellularModule::ProcessWakeup(u16 passedTimeDs) {
     // check response
     switch (status) {
-        case WAKINGUP:
+        case POWER_SUPPLY:
             wakeupSignalPassedTime += passedTimeDs;
             // waking up module needs 5 - 7sec.
             if (wakeupSignalPassedTime < wakeupSignalTimeDs) { break; }
+            status = WAKINGUP;
             PushResponseQueue("RDY", 70, nullptr, &CellularModule::DefaultResponseTimeout);
             // after receive following packet, check module accepting at command
-            PushResponseQueue("+QIND: PB DONE", ATCOMMAND_TIMEOUTDS, &CellularModule::ProcessAtCommandQueue,
+            PushResponseQueue("DONE", ATCOMMAND_TIMEOUTDS * 20, &CellularModule::ProcessAtCommandQueue,
                               &CellularModule::DefaultResponseTimeout);
             PushAtCommandQueue("AT");
             PushResponseQueue("OK", ATCOMMAND_TIMEOUTDS, &CellularModule::ChangeStatusWakeuped,
