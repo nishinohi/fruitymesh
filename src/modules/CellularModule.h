@@ -33,8 +33,8 @@
 #include <Module.h>
 #include <PacketQueue.h>
 
-#define ATCOMMAND_BUFFER 1024
-#define RESPONSE_BUFFER 256
+#define ATCOMMAND_BUFFER 400
+#define RESPONSE_BUFFER 400
 
 /*
  * This is a cellular for a FruityMesh module.
@@ -44,14 +44,31 @@ class CellularModule : public Module {
    private:
     // Module configuration that is saved persistently (size must be multiple of 4)
     struct CellularModuleConfiguration : ModuleConfiguration {
-        bool atcommandMode;
-        bool activated;
         // Insert more persistent config values here
     };
 
+    // Cellular Module Status
+    enum ModuleStatus {
+        SHUTDOWN = 0,
+        WAKINGUP,
+        WAKEUPED,
+        SIM_ACTIVATED,
+    };
+
+    ModuleStatus status = SHUTDOWN;
+
+    // すごくダサいからなんとかしたい
+    void ChangeStatusShutdown() { status = SHUTDOWN; }
+    void ChangeStatusWakingup() { status = WAKINGUP; }
+    void ChangeStatusWakeuped() { status = WAKEUPED; }
+    void ChangeStatusSimActivated() { status = SIM_ACTIVATED; }
+
     u32 atCommandBuffer[ATCOMMAND_BUFFER / sizeof(u32)] = {};
-    u32 responseBuffer[RESPONSE_BUFFER / sizeof(u32)] = {};
     PacketQueue atCommandQueue;
+    // response buffer is aligned following
+    // <---------- one unit ----------->
+    // [response str][response callback][...]
+    u32 responseBuffer[RESPONSE_BUFFER / sizeof(u32)];
     PacketQueue responseQueue;
     u16 responsePassedTimeDs = 0;
 
@@ -59,13 +76,13 @@ class CellularModule : public Module {
 
     typedef struct {
         u8 timeoutDs;
-        AtCommandCallback commandCallback;
+        AtCommandCallback responseCallback;
         AtCommandCallback timeoutCallback;
     } ResponseCallback;
 
     // wakeupSignal
-    static constexpr u8 wakeupSignalTimeDs = 2;  // 200msec
-    char wakeupSignalPassedTime = -1;
+    static constexpr u8 wakeupSignalTimeDs = 3;  // 300msec
+    char wakeupSignalPassedTime = 0;
 
     CellularModuleConfiguration configuration;
 
@@ -89,12 +106,35 @@ class CellularModule : public Module {
     //####### Module messages end
     */
 
-    void InitializeResponseCallback(ResponseCallback* responseCallBack);
+    void InitializeResponseCallback(ResponseCallback* responseCallback);
 
-    void ProcessAtCommands(u16 passedTimeDs);
-    bool PushAtCommandAndResponseQueue(const char* atCommand, const char* response, const u8& timeoutDs,
-                                       const AtCommandCallback& commandCallBack = nullptr,
-                                       const AtCommandCallback& timeoutCallBack = nullptr);
+    // get AT Command queue
+    // warning: receive char pointer does not contain '\0'.
+    char* GetAtCommandStr() const { return (char*)atCommandQueue.PeekNext().data; };
+    u16 GetAtCommandStrLength() const { return responseQueue.PeekNext().length; }
+    void DiscardAtCommandQueue() { atCommandQueue.DiscardNext(); }
+    // get reponse queue
+    // warning: receive char pointer does not contain '\0'.
+    char* GetResponseStr() const { return (char*)responseQueue.PeekNext().data; };
+    u16 GetResponseStrLength() const { return responseQueue.PeekNext().length; }
+    ResponseCallback* GetResponseCallback() const {
+        return reinterpret_cast<ResponseCallback*>(atCommandQueue.PeekNext(1).data);
+    }
+    void DiscardResponseQueue();
+    // queue util
+    bool IsEmptyQueue(const PacketQueue& queue) { return queue._numElements > 0; }
+    bool IsValidResponseQueue() { return atCommandQueue._numElements % 2 == 0; }
+
+    // AT Command Queue and Process
+    bool PushAtCommandQueue(const char* atCommand);
+    void ProcessAtCommandQueue();
+    // Response Queue and Process
+    bool PushResponseQueue(const char* response, const u8& timeoutDs,
+                           const AtCommandCallback& responseCallback = nullptr,
+                           const AtCommandCallback& timeoutCallback = nullptr);
+    void ProcessResponseQueue(const char* arg);
+    void ProcessResponseTimeout(u16 passedTimeDs);
+    void DefaultResponseTimeout();
 
     void SupplyPower();
     void ProcessWakeup(u16 passedTimeDs);
@@ -113,7 +153,7 @@ class CellularModule : public Module {
     void Initialize();
     void TurnOn();
     void TurnOff();
-    void Activate();
+    void SimActivate();
 
 #ifdef TERMINAL_ENABLED
     TerminalCommandHandlerReturnType TerminalCommandHandler(const char* commandArgs[], u8 commandArgsSize) override;
