@@ -92,6 +92,15 @@ void CellularModule::InitializeResponseCallback(ResponseCallback* responseCallba
     responseCallback->timeoutCallback = nullptr;
 }
 
+void CellularModule::SendAtCommand(char* atCommand, const u16& atCommandLen) {
+    char atCommandWithCr[atCommandLen + 2];
+    CheckedMemset(atCommandWithCr, '\0', atCommandLen + 2);
+    CheckedMemcpy(atCommandWithCr, atCommand, atCommandLen);
+    atCommandWithCr[atCommandLen] = '\r';
+    GS->terminal.PutString(atCommandWithCr);
+    logt("Send AT Command:%s", atCommandWithCr);
+}
+
 void CellularModule::DiscardResponseQueue() {
     responseQueue.DiscardNext();  // for response str
     responseQueue.DiscardNext();  // for response callback
@@ -100,12 +109,7 @@ void CellularModule::DiscardResponseQueue() {
 
 void CellularModule::ProcessAtCommandQueue() {
     if (IsEmptyQueue(atCommandQueue)) { return; }
-    u16 atCommandLen = GetAtCommandStrLength();
-    char atCommand[atCommandLen + 1];
-    CheckedMemset(atCommand, '\0', atCommandLen);
-    CheckedMemcpy(atCommand, GetAtCommandStr(), atCommandLen);
-    GS->terminal.PutString(atCommand);
-    logt(CELLSEND_TAG, "send AT Command:%s", atCommand);
+    SendAtCommand(GetAtCommandStr(), GetAtCommandStrLength());
     DiscardAtCommandQueue();
 }
 
@@ -158,10 +162,11 @@ void CellularModule::ProcessResponseQueue(const char* arg) {
     CheckedMemset(response, '\0', responseStrLen + 1);
     CheckedMemcpy(response, GetResponseStr(), responseStrLen);
     // TODO: notice response success
-    if (strncmp(response, arg, responseStrLen) == 0) {
-        logt(CELLSEND_TAG, "get response:%s", response);
-        DiscardResponseQueue();
-    }
+    if (strncmp(response, arg, responseStrLen) != 0) { return; }
+    logt(CELLSEND_TAG, "get response:%s", response);
+    AtCommandCallback responseCallback = GetResponseCallback();
+    if (responseCallback != nullptr) { (this->*responseCallback)(); }
+    DiscardResponseQueue();
 }
 
 void CellularModule::DefaultResponseTimeout() {
@@ -223,7 +228,10 @@ void CellularModule::ButtonHandler(u8 buttonId, u32 holdTime) { logs("button pre
 
 #ifdef TERMINAL_ENABLED
 TerminalCommandHandlerReturnType CellularModule::TerminalCommandHandler(const char* commandArgs[], u8 commandArgsSize) {
-    ProcessResponseQueue(commandArgs[0]);
+    if (status != SHUTDOWN) {
+        ProcessResponseQueue(commandArgs[0]);
+        return TerminalCommandHandlerReturnType::SUCCESS;
+    }
     if (TERMARGS(0, "cellularsend")) {
         logt(CELLSEND_TAG, "Trying to send data by cellular module");
         Initialize();

@@ -45,6 +45,7 @@ class CellularModule : public Module {
     // Module configuration that is saved persistently (size must be multiple of 4)
     struct CellularModuleConfiguration : ModuleConfiguration {
         // Insert more persistent config values here
+        // TODO: changeable line feed code mode.
     };
 
     // Cellular Module Status
@@ -109,10 +110,11 @@ class CellularModule : public Module {
 
     void InitializeResponseCallback(ResponseCallback* responseCallback);
 
+    void SendAtCommand(char* atCommand, const u16& atCommandLen);
     // get AT Command queue
     // warning: receive char pointer does not contain '\0'.
     char* GetAtCommandStr() const { return (char*)atCommandQueue.PeekNext().data; };
-    u16 GetAtCommandStrLength() const { return responseQueue.PeekNext().length; }
+    u16 GetAtCommandStrLength() const { return atCommandQueue.PeekNext().length; }
     void DiscardAtCommandQueue() { atCommandQueue.DiscardNext(); }
     // get reponse queue
     // warning: receive char pointer does not contain '\0'.
