@@ -537,6 +537,19 @@ void Terminal::UartCheckAndProcessLine(){
     }
 }
 
+bool Terminal::UartCheckLineFeedCode(const u8& byteBuffer) {
+    bool isGetLine = false;
+    const LineFeedCode lineFeedCode = Conf::getInstance().lineFeedCode;
+    if (lineFeedCode == LineFeedCode::CRLF && readBufferOffset > 0) {
+        isGetLine = ((byteBuffer == '\n' && readBuffer[readBufferOffset - 1] == '\r') ||
+                     readBufferOffset >= TERMINAL_READ_BUFFER_LENGTH - 2);
+    } else {
+        const char lineFeedCodeChar = lineFeedCode == LineFeedCode::CR ? '\r' : '\n';
+        isGetLine = (byteBuffer == lineFeedCodeChar || readBufferOffset >= TERMINAL_READ_BUFFER_LENGTH - 1);
+    }
+    return isGetLine;
+}
+
 //############################ UART_BLOCKING_READ
 #define ___________UART_BLOCKING_READ______________
 
@@ -582,21 +595,12 @@ void Terminal::UartReadLineBlocking()
         {
             //Display entered character in terminal
             UartPutCharBlockingWithTimeout(byteBuffer);
-            bool isGetLine = false;
-            const LineFeedCode lineFeedCode = Conf::getInstance().lineFeedCode;
-            if (lineFeedCode == LineFeedCode::CRLF && readBufferOffset > 0) {
-                isGetLine = ((byteBuffer == '\n' && readBuffer[readBufferOffset - 1] == '\r') ||
-                             readBufferOffset >= TERMINAL_READ_BUFFER_LENGTH - 2);
-            } else {
-                const char lineFeedCodeChar = lineFeedCode == LineFeedCode::CR ? '\r' : '\n';
-                isGetLine = (byteBuffer == lineFeedCodeChar || readBufferOffset >= TERMINAL_READ_BUFFER_LENGTH - 1);
-            }
-            if (!isGetLine) {
+            if (!UartCheckLineFeedCode(byteBuffer)) {
                 CheckedMemcpy(readBuffer + readBufferOffset, &byteBuffer, sizeof(u8));
                 ++readBufferOffset;
                 continue;
             }
-            if (lineFeedCode == LineFeedCode::CRLF) {
+            if (Conf::getInstance().lineFeedCode == LineFeedCode::CRLF) {
                 --readBufferOffset;
             }
             readBuffer[readBufferOffset] = '\0';
@@ -666,25 +670,27 @@ void Terminal::UartHandleInterruptRX(char byte)
 {
     //Set uart active if input was received
     uartActive = true;
+    UartPutCharBlockingWithTimeout(byte);
 
-    //Read the received byte
-    readBuffer[readBufferOffset] = byte;
-    readBufferOffset++;
-
-    //If the line is finished, it should be processed before additional data is read
-    if(byte == '\r' || readBufferOffset >= TERMINAL_READ_BUFFER_LENGTH - 1)
-    {
-        readBuffer[readBufferOffset-1] = '\0';
-        lineToReadAvailable = true; //Should be the last statement
-
-        FruityHal::SetPendingEventIRQ();
-        // => next, the main event loop will process the line from the main context
-    }
-    //Otherwise, we keep reading more bytes
-    else
-    {
+    // Read the received byte
+    // If the line is finished, it should be processed before additional data is read
+    // Otherwise, we keep reading more bytes
+    if (!UartCheckLineFeedCode(static_cast<u8>(byte))) {
+        readBuffer[readBufferOffset] = byte;
+        readBufferOffset++;
         FruityHal::UartEnableReadInterrupt();
+        return;
     }
+
+    if (Conf::getInstance().lineFeedCode == LineFeedCode::CRLF) { --readBufferOffset; }
+    readBuffer[readBufferOffset] = '\0';
+    if (readBufferOffset == 0) {
+        FruityHal::UartEnableReadInterrupt();
+        return;
+    }
+    lineToReadAvailable = true;  // Should be the last statement
+    FruityHal::SetPendingEventIRQ();
+    // => next, the main event loop will process the line from the main context
 }
 #endif
 //############################ SEGGER RTT

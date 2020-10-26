@@ -160,6 +160,7 @@ public:
 private:
     void UartEnable(bool promptAndEchoMode);
     void UartCheckAndProcessLine();
+    bool UartCheckLineFeedCode(const u8& byteBuffer);
     //Read - blocking (non-interrupt based)
     void UartReadLineBlocking();
     //Write (always blocking)
