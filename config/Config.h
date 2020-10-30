@@ -408,6 +408,8 @@ class Conf
         TerminalMode terminalMode : 8;
         //Configures which line feed code use. crlf(\r\n) or cr(\r)
         LineFeedCode lineFeedCode = LineFeedCode::CR;
+        //AT Command mode does not split received packets with specific charactor
+        bool atCommandMode = true;
 
         bool enableSinkRouting = false;
         // ########### TIMINGS ################################################

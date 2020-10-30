@@ -35,6 +35,8 @@
 
 #define ATCOMMAND_BUFFER 400
 #define RESPONSE_BUFFER 400
+#define POWERKEY_PIN 10
+#define POWERSUPPLY_PIN 11
 
 /*
  * This is a cellular for a FruityMesh module.
@@ -57,10 +59,18 @@ class CellularModule : public Module {
         SIM_ACTIVATED,
     };
 
+    // When receiving AT Command response causes timeout, how to process left command and response
+    enum ResponseTimeoutType {
+        SUSPEND = 0,  // suspend sending command and receiving response
+        CONTINUE,     // continue sending command and receiveing response
+        DELAY,        // just wait
+    };
+
     ModuleStatus status = SHUTDOWN;
 
     // すごくダサいからなんとかしたい
     void ChangeStatusShutdown() { status = SHUTDOWN; }
+    void ChangeStatusPowerSupply() { status = POWER_SUPPLY; }
     void ChangeStatusWakingup() { status = WAKINGUP; }
     void ChangeStatusWakeuped() { status = WAKEUPED; }
     void ChangeStatusSimActivated() { status = SIM_ACTIVATED; }
@@ -73,18 +83,17 @@ class CellularModule : public Module {
     u32 responseBuffer[RESPONSE_BUFFER / sizeof(u32)];
     PacketQueue responseQueue;
     u16 responsePassedTimeDs = 0;
+    // Dse only refering last arg. Never change last arg content.
+    char* lastArg = nullptr;
 
     typedef void (CellularModule::*AtCommandCallback)();
 
     typedef struct {
         u8 timeoutDs;
+        ResponseTimeoutType responseTimeoutType;
         AtCommandCallback responseCallback;
         AtCommandCallback timeoutCallback;
     } ResponseCallback;
-
-    // wakeupSignal
-    static constexpr u8 wakeupSignalTimeDs = 3;  // 300msec
-    char wakeupSignalPassedTime = 0;
 
     CellularModuleConfiguration configuration;
 
@@ -108,6 +117,10 @@ class CellularModule : public Module {
     //####### Module messages end
     */
 
+    // GPIO
+    void PowerKeyPinSet() { FruityHal::GpioPinSet(POWERKEY_PIN); }
+    void PowerKeyPinClear() { FruityHal::GpioPinClear(POWERKEY_PIN); }
+
     void InitializeResponseCallback(ResponseCallback* responseCallback);
 
     void SendAtCommand(char* atCommand, const u16& atCommandLen);
@@ -116,9 +129,13 @@ class CellularModule : public Module {
     char* GetAtCommandStr() const { return (char*)atCommandQueue.PeekNext().data; };
     u16 GetAtCommandStrLength() const { return atCommandQueue.PeekNext().length; }
     void DiscardAtCommandQueue() { atCommandQueue.DiscardNext(); }
+    void CleanAtCommandQueue() { atCommandQueue.Clean(); }
     // get reponse queue
     // warning: receive char pointer does not contain '\0'.
     char* GetResponseStr() const { return (char*)responseQueue.PeekNext().data; };
+    ResponseTimeoutType GetResponseTimeoutType() const {
+        return reinterpret_cast<ResponseCallback*>(responseQueue.PeekNext(1).data)->responseTimeoutType;
+    }
     u16 GetResponseStrLength() const { return responseQueue.PeekNext().length; }
     u16 GetResponseTimeoutDs() const {
         return reinterpret_cast<ResponseCallback*>(responseQueue.PeekNext(1).data)->timeoutDs;
@@ -130,6 +147,7 @@ class CellularModule : public Module {
         return reinterpret_cast<ResponseCallback*>(responseQueue.PeekNext(1).data)->timeoutCallback;
     }
     void DiscardResponseQueue();
+    void CleanResponseQueue();
     // queue util
     bool IsEmptyQueue(const PacketQueue& queue) { return queue._numElements == 0; }
     bool IsValidResponseQueue() { return responseQueue._numElements % 2 == 0; }
@@ -138,15 +156,13 @@ class CellularModule : public Module {
     bool PushAtCommandQueue(const char* atCommand);
     void ProcessAtCommandQueue();
     // Response Queue and Process
-    bool PushResponseQueue(const char* response, const u8& timeoutDs,
+    bool PushResponseQueue(const char* response, const u8& timeoutDs, const ResponseTimeoutType& responseTimeoutType,
                            const AtCommandCallback& responseCallback = nullptr,
                            const AtCommandCallback& timeoutCallback = nullptr);
+    bool PushDelayQueue(const u8& delayDs, const AtCommandCallback& delayCallback = nullptr);
     void ProcessResponseQueue(const char* arg);
     void ProcessResponseTimeout(u16 passedTimeDs);
-    void DefaultResponseTimeout();
-
-    void SupplyPower();
-    void ProcessWakeup(u16 passedTimeDs);
+    void LoggingTimeoutResponse();
 
    public:
     CellularModule();
@@ -159,7 +175,9 @@ class CellularModule : public Module {
 
     void MeshMessageReceivedHandler(BaseConnection* connection, BaseConnectionSendData* sendData,
                                     connPacketHeader const* packetHeader) override;
-    void Initialize();
+    void Wakeup();
+    void SupplyPower();
+    void SuspendPower() { FruityHal::GpioPinClear(POWERSUPPLY_PIN); }
     void TurnOn();
     void TurnOff();
     void SimActivate();

@@ -53,7 +53,7 @@ void setFeaturesetConfiguration_github_nrf52(ModuleConfiguration* config, void* 
     if (config->moduleId == ModuleId::CONFIG)
     {
         Conf::getInstance().defaultLedMode = LedMode::CONNECTIONS;
-        Conf::getInstance().terminalMode = TerminalMode::PROMPT;
+        Conf::getInstance().terminalMode = TerminalMode::JSON;
         Conf::getInstance().lineFeedCode = LineFeedCode::CRLF;
     }
     else if (config->moduleId == ModuleId::NODE)

@@ -397,8 +397,10 @@ void Terminal::ProcessLine(char* line)
     }
 
     //Tokenize input string into vector
+    bool atCommandMode = Conf::getInstance().atCommandMode;
     u16 size = (u16)strlen(line);
-    i32 commandArgsSize = TokenizeLine(line, size);
+    i32 commandArgsSize = atCommandMode ? 1 : TokenizeLine(line, size);
+    if (atCommandMode) { commandArgsPtr[0] = &(line[0]); }
     if (commandArgsSize < 0) {
         if (Conf::getInstance().terminalMode == TerminalMode::PROMPT) {
             log_transport_putstring("Too many arguments!" EOL);
@@ -670,7 +672,7 @@ void Terminal::UartHandleInterruptRX(char byte)
 {
     //Set uart active if input was received
     uartActive = true;
-    UartPutCharBlockingWithTimeout(byte);
+    // UartPutCharBlockingWithTimeout(byte);
 
     // Read the received byte
     // If the line is finished, it should be processed before additional data is read

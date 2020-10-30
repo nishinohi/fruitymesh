@@ -30,7 +30,7 @@
 
 
 //The following can be undefined to drastically change the size of the firmware
-#define ACTIVATE_LOGGING 1 //Undefine to remove most human readable logs
-#define ACTIVATE_JSON_LOGGING 1 //Undefine to remove json communication over uart
+#define ACTIVATE_LOGGING 0 //Undefine to remove most human readable logs
+#define ACTIVATE_JSON_LOGGING 0 //Undefine to remove json communication over uart
 #define ACTIVATE_UART 1 //Undefine to remove the UART terminal
 #define ACTIVATE_SEGGER_RTT 1 //Undefine to disable debugging over Segger Rtt
