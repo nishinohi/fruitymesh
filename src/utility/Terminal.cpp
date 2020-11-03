@@ -438,22 +438,34 @@ void Terminal::ProcessLine(char* line)
 #endif
 }
 
-i32 Terminal::TokenizeLine(char* line, u16 lineLength)
+i32 Terminal::TokenizeLine(char* line, u16 lineLength, const char* tokens)
 {
     CheckedMemset(commandArgsPtr, 0, MAX_NUM_TERM_ARGS * sizeof(char*));
     commandArgsPtr[0] = &(line[0]);
     i32 commandArgsSize = 1;
 
     for(u32 i=0; i<lineLength; i++){
-        if (line[i] == ' ' && line[i+1] > '!' && line[i+1] < '~') {
-            if (commandArgsSize >= MAX_NUM_TERM_ARGS) {
-                SIMEXCEPTION(TooManyArgumentsException); //LCOV_EXCL_LINE assertion
-                return -1;                                 //LCOV_EXCL_LINE assertion
-            }
-            commandArgsPtr[commandArgsSize] = &line[i+1];
-            line[i] = '\0';
-            commandArgsSize++;
+        if (line[i + 1] <= '!' || line[i + 1] >= '~') { continue; }
+        if (tokens == nullptr) {
+            if (line[i] != ' ') { continue; }
         }
+        if (tokens != nullptr) {
+            bool isToken = false;
+            u8 tokenLen = sizeof(tokens) / sizeof(char);
+            for (u8 jj = 0; jj < tokenLen; ++jj) {
+                if (line[i] != tokens[jj]) { continue; }
+                isToken = true;
+                break;
+            }
+            if (!isToken) { continue; }
+        }
+        if (commandArgsSize >= MAX_NUM_TERM_ARGS) {
+            SIMEXCEPTION(TooManyArgumentsException);  // LCOV_EXCL_LINE assertion
+            return -1;                                // LCOV_EXCL_LINE assertion
+        }
+        commandArgsPtr[commandArgsSize] = &line[i + 1];
+        line[i] = '\0';
+        commandArgsSize++;
     }
 
     return commandArgsSize;

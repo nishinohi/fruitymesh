@@ -34,9 +34,11 @@
 #include <PacketQueue.h>
 
 #define ATCOMMAND_BUFFER 400
-#define RESPONSE_BUFFER 400
+#define RESPONSE_BUFFER 800
 #define POWERKEY_PIN 10
 #define POWERSUPPLY_PIN 11
+#define DEFAULT_SUCCESS "OK"
+#define DEFAULT_ERROR "ERROR"
 
 /*
  * This is a cellular for a FruityMesh module.
@@ -63,10 +65,11 @@ class CellularModule : public Module {
     enum ResponseTimeoutType {
         SUSPEND = 0,  // suspend sending command and receiving response
         CONTINUE,     // continue sending command and receiveing response
-        DELAY,        // just wait
+        DELAY,        // just wait, and fire timeout response
     };
 
     ModuleStatus status = SHUTDOWN;
+    ErrorType commandStatus;
 
     // すごくダサいからなんとかしたい
     void ChangeStatusShutdown() { status = SHUTDOWN; }
@@ -78,8 +81,8 @@ class CellularModule : public Module {
     u32 atCommandBuffer[ATCOMMAND_BUFFER / sizeof(u32)] = {};
     PacketQueue atCommandQueue;
     // response buffer is aligned following
-    // <---------- one unit ----------->
-    // [response str][response callback][...]
+    // <------------------------------ one unit -------------------------------->
+    // [successStr][errorStr][returnCodeNum][[returnCode] * n][response callback][...]
     u32 responseBuffer[RESPONSE_BUFFER / sizeof(u32)];
     PacketQueue responseQueue;
     u16 responsePassedTimeDs = 0;
@@ -91,7 +94,8 @@ class CellularModule : public Module {
     typedef struct {
         u8 timeoutDs;
         ResponseTimeoutType responseTimeoutType;
-        AtCommandCallback responseCallback;
+        AtCommandCallback successCallback;
+        AtCommandCallback errorCallback;
         AtCommandCallback timeoutCallback;
     } ResponseCallback;
 
@@ -132,20 +136,21 @@ class CellularModule : public Module {
     void CleanAtCommandQueue() { atCommandQueue.Clean(); }
     // get reponse queue
     // warning: receive char pointer does not contain '\0'.
-    char* GetResponseStr() const { return (char*)responseQueue.PeekNext().data; };
-    ResponseTimeoutType GetResponseTimeoutType() const {
-        return reinterpret_cast<ResponseCallback*>(responseQueue.PeekNext(1).data)->responseTimeoutType;
+    char* GetSuccessStr() const { return (char*)responseQueue.PeekNext().data; };
+    u16 GetSuccessStrLength() const { return responseQueue.PeekNext().length; }
+    char* GetErrorStr() const { return (char*)responseQueue.PeekNext(1).data; };
+    u16 GetErrorStrLength() const { return responseQueue.PeekNext(1).length; }
+    u8 GetReturnCodeNum() const { return *(responseQueue.PeekNext(2).data); };
+    char GetReturnCode(const u8& index) const { return *(responseQueue.PeekNext(3 + index).data); }
+    // 3 = [success str][error str][return code num]
+    ResponseCallback* GetResponseCallback() const {
+        return reinterpret_cast<ResponseCallback*>(responseQueue.PeekNext(GetReturnCodeNum() + 3).data);
     }
-    u16 GetResponseStrLength() const { return responseQueue.PeekNext().length; }
-    u16 GetResponseTimeoutDs() const {
-        return reinterpret_cast<ResponseCallback*>(responseQueue.PeekNext(1).data)->timeoutDs;
-    }
-    AtCommandCallback GetResponseCallback() const {
-        return reinterpret_cast<ResponseCallback*>(responseQueue.PeekNext(1).data)->responseCallback;
-    }
-    AtCommandCallback GetTimeoutCallback() const {
-        return reinterpret_cast<ResponseCallback*>(responseQueue.PeekNext(1).data)->timeoutCallback;
-    }
+    u16 GetResponseTimeoutDs() const { return GetResponseCallback()->timeoutDs; }
+    ResponseTimeoutType GetResponseTimeoutType() const { return GetResponseCallback()->responseTimeoutType; }
+    AtCommandCallback GetSuccessCallback() const { return GetResponseCallback()->successCallback; }
+    AtCommandCallback GetErrorCallback() const { return GetResponseCallback()->errorCallback; }
+    AtCommandCallback GetTimeoutCallback() const { return GetResponseCallback()->timeoutCallback; }
     void DiscardResponseQueue();
     void CleanResponseQueue();
     // queue util
@@ -156,11 +161,17 @@ class CellularModule : public Module {
     bool PushAtCommandQueue(const char* atCommand);
     void ProcessAtCommandQueue();
     // Response Queue and Process
-    bool PushResponseQueue(const char* response, const u8& timeoutDs, const ResponseTimeoutType& responseTimeoutType,
-                           const AtCommandCallback& responseCallback = nullptr,
-                           const AtCommandCallback& timeoutCallback = nullptr);
+    template <class... ReturnCodes>
+    bool PushResponseQueue(const u8& timeoutDs, const AtCommandCallback& successCallback = nullptr,
+                           const AtCommandCallback& errorCallback = nullptr,
+                           const AtCommandCallback& timeoutCallback = nullptr, const char* successStr = DEFAULT_SUCCESS,
+                           const char* errorStr = "ERROR", const ResponseTimeoutType& responseTimeoutType = SUSPEND,
+                           ReturnCodes... returnCodes);
+    template <class Head, class... Tail>
+    bool PushReturnCodes(Head head, Tail... tail);
+    bool PushReturnCodes() { return true; }
     bool PushDelayQueue(const u8& delayDs, const AtCommandCallback& delayCallback = nullptr);
-    void ProcessResponseQueue(const char* arg);
+    void ProcessResponseQueue(const char* response);
     void ProcessResponseTimeout(u16 passedTimeDs);
     void LoggingTimeoutResponse();
 
@@ -180,7 +191,10 @@ class CellularModule : public Module {
     void SuspendPower() { FruityHal::GpioPinClear(POWERSUPPLY_PIN); }
     void TurnOn();
     void TurnOff();
+
+    // cellular module activation
     void SimActivate();
+    void CheckNetworkRegistrationStatus();
 
 #ifdef TERMINAL_ENABLED
     TerminalCommandHandlerReturnType TerminalCommandHandler(const char* commandArgs[], u8 commandArgsSize) override;
