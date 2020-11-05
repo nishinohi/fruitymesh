@@ -181,8 +181,6 @@ bool CellularModule::PushDelayQueue(const u8& delayDs, const AtCommandCallback& 
 
 void CellularModule::ProcessResponseQueue(const char* response) {
     if (IsEmptyQueue(responseQueue)) { return; }
-    // TODO: fatal error
-    if (!IsValidResponseQueue()) { return; }
     lastArg = const_cast<char*>(response);
     // check error str
     const u16 errorStrLen = GetErrorStrLength();
@@ -190,10 +188,11 @@ void CellularModule::ProcessResponseQueue(const char* response) {
     CheckedMemset(errorStr, '\0', errorStrLen + 1);
     CheckedMemcpy(errorStr, GetErrorStr(), errorStrLen);
     if (strncmp(errorStr, response, errorStrLen) == 0) {
-        GS->terminal.SeggerRttPutString("get error str:");
+        GS->terminal.SeggerRttPutString("get error:");
         GS->terminal.SeggerRttPutString(errorStr);
         AtCommandCallback errorCallback = GetErrorCallback();
         if (errorCallback != nullptr) { (this->*errorCallback)(); }
+        responsePassedTimeDs = 0;
         return;
     }
     // check success str
@@ -220,6 +219,7 @@ void CellularModule::ProcessResponseQueue(const char* response) {
                 GS->terminal.SeggerRttPutString(commandArgsPtr[ii]);
                 AtCommandCallback errorCallback = GetErrorCallback();
                 if (errorCallback != nullptr) { (this->*errorCallback)(); }
+                responsePassedTimeDs = 0;
                 return;
             }
         }
@@ -233,7 +233,6 @@ void CellularModule::ProcessResponseQueue(const char* response) {
 void CellularModule::ProcessResponseTimeout(u16 passedTimeDs) {
     if (IsEmptyQueue(responseQueue)) { return; }
     // TODO: fatal error
-    if (!IsValidResponseQueue()) { return; }
     u16 timeoutDs = GetResponseTimeoutDs();
     if (timeoutDs != 0 && responsePassedTimeDs < timeoutDs) {
         responsePassedTimeDs += passedTimeDs;
@@ -245,7 +244,6 @@ void CellularModule::ProcessResponseTimeout(u16 passedTimeDs) {
     AtCommandCallback timeoutCallback = GetTimeoutCallback();
     if (timeoutCallback != nullptr) { (this->*(timeoutCallback))(); }
     responsePassedTimeDs = 0;
-    AtCommandCallback responseCallback = nullptr;
     switch (GetResponseTimeoutType()) {
         case SUSPEND:
             CleanAtCommandQueue();
@@ -275,9 +273,8 @@ void CellularModule::LoggingTimeoutResponse() {
 }
 
 void CellularModule::Wakeup() {
-    SimActivate();
-    //     SupplyPower();
-    //     TurnOn();
+    SupplyPower();
+    TurnOn();
 }
 
 void CellularModule::SupplyPower() {
@@ -292,21 +289,29 @@ void CellularModule::TurnOn() {
     PushDelayQueue(WAKEUP_SIGNAL_TIME_DS, &CellularModule::PowerKeyPinClear);
     PushDelayQueue(0, &CellularModule::ChangeStatusWakingup);
     // waking up module needs 10sec.
-    PushResponseQueue(100, nullptr, nullptr, &CellularModule::ChangeStatusShutdown, "RDY");
+    PushResponseQueue(100, nullptr, &CellularModule::TurnOnFailedCallback, &CellularModule::TurnOnFailedCallback,
+                      "RDY");
     // After receive following packet, check module accepting AT command
-    PushResponseQueue(ATCOMMAND_TIMEOUTDS * 5, nullptr, nullptr, &CellularModule::ChangeStatusShutdown,
-                      "+QIND: PB DONE");
+    PushResponseQueue(ATCOMMAND_TIMEOUTDS * 5, nullptr, &CellularModule::TurnOnFailedCallback,
+                      &CellularModule::TurnOnFailedCallback, "+QIND: PB DONE");
     PushDelayQueue(5, &CellularModule::ProcessAtCommandQueue);
     PushAtCommandQueue("AT");
-    PushResponseQueue(ATCOMMAND_TIMEOUTDS, &CellularModule::ProcessAtCommandQueue, nullptr,
-                      &CellularModule::ChangeStatusShutdown, "OK");
+    PushResponseQueue(ATCOMMAND_TIMEOUTDS, &CellularModule::ProcessAtCommandQueue,
+                      &CellularModule::TurnOnFailedCallback, &CellularModule::TurnOnFailedCallback);
     PushAtCommandQueue("ATE0");
-    PushResponseQueue(ATCOMMAND_TIMEOUTDS, &CellularModule::ProcessAtCommandQueue, nullptr,
-                      &CellularModule::ChangeStatusShutdown, "OK");
+    PushResponseQueue(ATCOMMAND_TIMEOUTDS, &CellularModule::ProcessAtCommandQueue,
+                      &CellularModule::TurnOnFailedCallback, &CellularModule::ChangeStatusShutdown);
     PushAtCommandQueue("AT+QURCCFG=\"urcport\",\"uart1\"");
-    PushResponseQueue(ATCOMMAND_TIMEOUTDS, &CellularModule::ChangeStatusWakeuped, nullptr,
-                      &CellularModule::ChangeStatusShutdown, "OK");
+    PushResponseQueue(ATCOMMAND_TIMEOUTDS, &CellularModule::ChangeStatusWakeuped, &CellularModule::TurnOnFailedCallback,
+                      &CellularModule::TurnOnFailedCallback);
     // note: Add following commands if you need. [AT+QSCLK=1],[AT+CPIN?]
+}
+
+void CellularModule::TurnOnFailedCallback() {
+    ChangeStatusShutdown();
+    CleanResponseQueue();
+    CleanAtCommandQueue();
+    commandStatus = ErrorType::INTERNAL;
 }
 
 void CellularModule::TurnOff() {
@@ -321,7 +326,6 @@ void CellularModule::SimActivate() {
 }
 
 void CellularModule::CheckNetworkRegistrationStatus() {
-    ChangeStatusWakeuped();
     PushAtCommandQueue("AT+CGREG?");
     PushResponseQueue(ATCOMMAND_TIMEOUTDS, &CellularModule::ProcessAtCommandQueue, nullptr,
                       &CellularModule::ChangeStatusShutdown, "+CGREG", DEFAULT_ERROR, SUSPEND, -1, 1);

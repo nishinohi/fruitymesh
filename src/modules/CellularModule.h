@@ -155,7 +155,6 @@ class CellularModule : public Module {
     void CleanResponseQueue();
     // queue util
     bool IsEmptyQueue(const PacketQueue& queue) { return queue._numElements == 0; }
-    bool IsValidResponseQueue() { return responseQueue._numElements % 2 == 0; }
 
     // AT Command Queue and Process
     bool PushAtCommandQueue(const char* atCommand);
@@ -175,6 +174,16 @@ class CellularModule : public Module {
     void ProcessResponseTimeout(u16 passedTimeDs);
     void LoggingTimeoutResponse();
 
+    // wake up
+    void SupplyPower();
+    void SuspendPower() { FruityHal::GpioPinClear(POWERSUPPLY_PIN); }
+    void TurnOn();
+    void TurnOnFailedCallback();
+    void TurnOff();
+
+    // sim activation
+    void CheckNetworkRegistrationStatus();
+
    public:
     CellularModule();
 
@@ -187,14 +196,9 @@ class CellularModule : public Module {
     void MeshMessageReceivedHandler(BaseConnection* connection, BaseConnectionSendData* sendData,
                                     connPacketHeader const* packetHeader) override;
     void Wakeup();
-    void SupplyPower();
-    void SuspendPower() { FruityHal::GpioPinClear(POWERSUPPLY_PIN); }
-    void TurnOn();
-    void TurnOff();
 
     // cellular module activation
     void SimActivate();
-    void CheckNetworkRegistrationStatus();
 
 #ifdef TERMINAL_ENABLED
     TerminalCommandHandlerReturnType TerminalCommandHandler(const char* commandArgs[], u8 commandArgsSize) override;
