@@ -33,8 +33,9 @@
 #include <Module.h>
 #include <PacketQueue.h>
 
+#define ATCOMMAND_SEQUENCE_BUFFER 40
 #define ATCOMMAND_BUFFER 400
-#define RESPONSE_BUFFER 800
+#define RESPONSE_BUFFER 1000
 #define POWERKEY_PIN 10
 #define POWERSUPPLY_PIN 11
 #define DEFAULT_SUCCESS "OK"
@@ -51,6 +52,10 @@ class CellularModule : public Module {
         // Insert more persistent config values here
         // TODO: changeable line feed code mode.
     };
+
+    enum CellularModuleTriggerActionMessages { TRIGGER_CELLULAR = 0 };
+
+    enum CellularModuleActionResponseMessages { MESSAGE_0_RESPONSE = 0 };
 
     // Cellular Module Status
     enum ModuleStatus {
@@ -69,7 +74,7 @@ class CellularModule : public Module {
     };
 
     ModuleStatus status = SHUTDOWN;
-    ErrorType commandStatus;
+    ErrorType commandSequenceStatus = ErrorType::SUCCESS;
 
     // すごくダサいからなんとかしたい
     void ChangeStatusShutdown() { status = SHUTDOWN; }
@@ -78,6 +83,17 @@ class CellularModule : public Module {
     void ChangeStatusWakeuped() { status = WAKEUPED; }
     void ChangeStatusSimActivated() { status = SIM_ACTIVATED; }
 
+    typedef void (CellularModule::*AtCommandCallback)();
+
+    typedef struct {
+        AtCommandCallback sequenceCallback;
+        u8 retryCount;
+    } AtComandSequenceCallback;
+
+    // at command sequence queue
+    u32 atCommandSequenceBuffer[ATCOMMAND_SEQUENCE_BUFFER / sizeof(u32)];
+    PacketQueue atCommandSequenceQueue;
+    // at command queue
     u32 atCommandBuffer[ATCOMMAND_BUFFER / sizeof(u32)] = {};
     PacketQueue atCommandQueue;
     // response buffer is aligned following
@@ -89,10 +105,8 @@ class CellularModule : public Module {
     // Dse only refering last arg. Never change last arg content.
     char* lastArg = nullptr;
 
-    typedef void (CellularModule::*AtCommandCallback)();
-
     typedef struct {
-        u8 timeoutDs;
+        u16 timeoutDs;
         ResponseTimeoutType responseTimeoutType;
         AtCommandCallback successCallback;
         AtCommandCallback errorCallback;
@@ -100,10 +114,6 @@ class CellularModule : public Module {
     } ResponseCallback;
 
     CellularModuleConfiguration configuration;
-
-    enum CellularModuleTriggerActionMessages { TRIGGER_CELLULAR = 0 };
-
-    enum CellularModuleActionResponseMessages { MESSAGE_0_RESPONSE = 0 };
 
     /*
     //####### Module messages (these need to be packed)
@@ -126,6 +136,16 @@ class CellularModule : public Module {
     void PowerKeyPinClear() { FruityHal::GpioPinClear(POWERKEY_PIN); }
 
     void InitializeResponseCallback(ResponseCallback* responseCallback);
+
+    // AT Command sequence queue
+    void ProcessAtCommandSequenceQueue();
+    bool PushAtCommandSequenceQueue(const AtCommandCallback& sequenceCallback, const u8& retryCount = 0);
+    AtCommandCallback GetSequenceCallback() const {
+        return reinterpret_cast<AtComandSequenceCallback*>(atCommandSequenceQueue.PeekNext().data)->sequenceCallback;
+    }
+    u8 GetSequenceRetryCount() const {
+        return reinterpret_cast<AtComandSequenceCallback*>(atCommandSequenceQueue.PeekNext().data)->retryCount;
+    }
 
     void SendAtCommand(char* atCommand, const u16& atCommandLen);
     // get AT Command queue
@@ -161,7 +181,7 @@ class CellularModule : public Module {
     void ProcessAtCommandQueue();
     // Response Queue and Process
     template <class... ReturnCodes>
-    bool PushResponseQueue(const u8& timeoutDs, const AtCommandCallback& successCallback = nullptr,
+    bool PushResponseQueue(const u16& timeoutDs, const AtCommandCallback& successCallback = nullptr,
                            const AtCommandCallback& errorCallback = nullptr,
                            const AtCommandCallback& timeoutCallback = nullptr, const char* successStr = DEFAULT_SUCCESS,
                            const char* errorStr = "ERROR", const ResponseTimeoutType& responseTimeoutType = SUSPEND,
@@ -175,14 +195,22 @@ class CellularModule : public Module {
     void LoggingTimeoutResponse();
 
     // wake up
+    void Wakeup();
     void SupplyPower();
     void SuspendPower() { FruityHal::GpioPinClear(POWERSUPPLY_PIN); }
     void TurnOn();
-    void TurnOnFailedCallback();
+    void WakeupSuccessCallback();
+    void WakeupFailedCallback();
     void TurnOff();
 
     // sim activation
+    void SimActivate();
     void CheckNetworkRegistrationStatus();
+    void ConfigTcpIpParameter();
+    bool isNetworkStatusReCheck = false;
+    void ActivatePdpContext();
+    void SimActivateSuccess();
+    void SimActivateFailed();
 
    public:
     CellularModule();
@@ -195,10 +223,8 @@ class CellularModule : public Module {
 
     void MeshMessageReceivedHandler(BaseConnection* connection, BaseConnectionSendData* sendData,
                                     connPacketHeader const* packetHeader) override;
-    void Wakeup();
 
-    // cellular module activation
-    void SimActivate();
+    void SendFiredNodeIdListByCellular(const NodeId* nodeIdList);
 
 #ifdef TERMINAL_ENABLED
     TerminalCommandHandlerReturnType TerminalCommandHandler(const char* commandArgs[], u8 commandArgsSize) override;
