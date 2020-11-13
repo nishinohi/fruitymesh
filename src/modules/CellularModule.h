@@ -33,13 +33,14 @@
 #include <Module.h>
 #include <PacketQueue.h>
 
-#define ATCOMMAND_SEQUENCE_BUFFER 40
+#define ATCOMMAND_SEQUENCE_BUFFER 100
 #define ATCOMMAND_BUFFER 400
 #define RESPONSE_BUFFER 1000
 #define POWERKEY_PIN 10
 #define POWERSUPPLY_PIN 11
 #define DEFAULT_SUCCESS "OK"
 #define DEFAULT_ERROR "ERROR"
+#define CONNECT_ID_NUM 12
 
 /*
  * This is a cellular for a FruityMesh module.
@@ -66,11 +67,12 @@ class CellularModule : public Module {
         SIM_ACTIVATED,
     };
 
-    // When receiving AT Command response causes timeout, how to process left command and response
+    // When receiving AT Command response causes timeout, how to process left response queue
     enum ResponseTimeoutType {
-        SUSPEND = 0,  // suspend sending command and receiving response
-        CONTINUE,     // continue sending command and receiveing response
-        DELAY,        // just wait, and fire timeout response
+        SUSPEND = 0,           // suspend receiving response and clear response queue
+        CONTINUE,              // continue receiving response and discard one response queue
+        CONTINUE_NON_DISCARD,  // continue receiving response.Use this type When timeout callback add new response queue
+        DELAY,                 // continue receiving response and discard one response queue
     };
 
     ModuleStatus status = SHUTDOWN;
@@ -84,6 +86,7 @@ class CellularModule : public Module {
     void ChangeStatusSimActivated() { status = SIM_ACTIVATED; }
 
     typedef void (CellularModule::*AtCommandCallback)();
+    typedef void (CellularModule::*AtCommandCustomCallback)(void* context);
 
     typedef struct {
         AtCommandCallback sequenceCallback;
@@ -111,6 +114,7 @@ class CellularModule : public Module {
         AtCommandCallback successCallback;
         AtCommandCallback errorCallback;
         AtCommandCallback timeoutCallback;
+        AtCommandCustomCallback responseCustomCallback;
     } ResponseCallback;
 
     CellularModuleConfiguration configuration;
@@ -161,7 +165,7 @@ class CellularModule : public Module {
     char* GetErrorStr() const { return (char*)responseQueue.PeekNext(1).data; };
     u16 GetErrorStrLength() const { return responseQueue.PeekNext(1).length; }
     u8 GetReturnCodeNum() const { return *(responseQueue.PeekNext(2).data); };
-    char GetReturnCode(const u8& index) const { return *(responseQueue.PeekNext(3 + index).data); }
+    i8 GetReturnCode(const u8& index) const { return *(responseQueue.PeekNext(3 + index).data); }
     // 3 = [success str][error str][return code num]
     ResponseCallback* GetResponseCallback() const {
         return reinterpret_cast<ResponseCallback*>(responseQueue.PeekNext(GetReturnCodeNum() + 3).data);
@@ -171,6 +175,7 @@ class CellularModule : public Module {
     AtCommandCallback GetSuccessCallback() const { return GetResponseCallback()->successCallback; }
     AtCommandCallback GetErrorCallback() const { return GetResponseCallback()->errorCallback; }
     AtCommandCallback GetTimeoutCallback() const { return GetResponseCallback()->timeoutCallback; }
+    AtCommandCustomCallback GetResopnseCustomCallback() const { return GetResponseCallback()->responseCustomCallback; }
     void DiscardResponseQueue();
     void CleanResponseQueue();
     // queue util
@@ -183,9 +188,10 @@ class CellularModule : public Module {
     template <class... ReturnCodes>
     bool PushResponseQueue(const u16& timeoutDs, const AtCommandCallback& successCallback = nullptr,
                            const AtCommandCallback& errorCallback = nullptr,
-                           const AtCommandCallback& timeoutCallback = nullptr, const char* successStr = DEFAULT_SUCCESS,
-                           const char* errorStr = "ERROR", const ResponseTimeoutType& responseTimeoutType = SUSPEND,
-                           ReturnCodes... returnCodes);
+                           const AtCommandCallback& timeoutCallback = nullptr,
+                           const AtCommandCustomCallback& responseCustomCallback = nullptr,
+                           const char* successStr = DEFAULT_SUCCESS, const char* errorStr = "ERROR",
+                           const ResponseTimeoutType& responseTimeoutType = SUSPEND, ReturnCodes... returnCodes);
     template <class Head, class... Tail>
     bool PushReturnCodes(Head head, Tail... tail);
     bool PushReturnCodes() { return true; }
@@ -211,6 +217,15 @@ class CellularModule : public Module {
     void ActivatePdpContext();
     void SimActivateSuccess();
     void SimActivateFailed();
+
+    // Socket Open
+    bool connectedIds[CONNECT_ID_NUM];
+    u8 connectId;
+    void SocketOpen();
+    void ParseConnectedId(void* _response);
+    void PushSocketOpenCommandAndResponse();
+    void SocketOpenSuccess();
+    void SocketOpenFailed();
 
    public:
     CellularModule();

@@ -32,6 +32,7 @@
 #include <Logger.h>
 #include <Node.h>
 #include <Utility.h>
+#include <mini-printf.h>
 
 #include "GlobalState.h"
 #include "Terminal.h"
@@ -93,10 +94,12 @@ void CellularModule::InitializeResponseCallback(ResponseCallback* responseCallba
 
 void CellularModule::ProcessAtCommandSequenceQueue() {
     if (IsEmptyQueue(atCommandSequenceQueue)) { return; }
-    // if (commandSequenceStatus != ErrorType::SUCCESS) {
-    //     atCommandSequenceQueue.Clean();
-    //     return;
-    // }
+    if (commandSequenceStatus != ErrorType::SUCCESS) {
+        atCommandSequenceQueue.Clean();
+        return;
+    }
+    if (!IsEmptyQueue(atCommandQueue)) { CleanAtCommandQueue(); }
+    if (!IsEmptyQueue(responseQueue)) { CleanResponseQueue(); }
     (this->*GetSequenceCallback())();
     atCommandSequenceQueue.DiscardNext();
 }
@@ -145,8 +148,9 @@ bool CellularModule::PushAtCommandQueue(const char* atCommand) {
 template <class... ReturnCodes>
 bool CellularModule::PushResponseQueue(const u16& timeoutDs, const AtCommandCallback& successCallback,
                                        const AtCommandCallback& errorCallback, const AtCommandCallback& timeoutCallback,
-                                       const char* successStr, const char* errorStr,
-                                       const ResponseTimeoutType& responseTimeoutType, ReturnCodes... returnCodes) {
+                                       const AtCommandCustomCallback& responseCustomCallback, const char* successStr,
+                                       const char* errorStr, const ResponseTimeoutType& responseTimeoutType,
+                                       ReturnCodes... returnCodes) {
     // Queue ATCommand and response
     if (successStr == NULL || strlen(successStr) < 1 || errorStr == NULL || strlen(errorStr) < 1) { return false; }
     if (!responseQueue.Put(reinterpret_cast<u8*>(const_cast<char*>(successStr)), strlen(successStr))) { return false; }
@@ -169,11 +173,13 @@ bool CellularModule::PushResponseQueue(const u16& timeoutDs, const AtCommandCall
         };
     }
     // Queue ResponseCallback
-    ResponseCallback newResponseCallback = {.timeoutDs = timeoutDs,
-                                            .responseTimeoutType = responseTimeoutType,
-                                            .successCallback = successCallback == NULL ? nullptr : successCallback,
-                                            .errorCallback = errorCallback == NULL ? nullptr : errorCallback,
-                                            .timeoutCallback = timeoutCallback == NULL ? nullptr : timeoutCallback};
+    ResponseCallback newResponseCallback = {
+        .timeoutDs = timeoutDs,
+        .responseTimeoutType = responseTimeoutType,
+        .successCallback = successCallback == NULL ? nullptr : successCallback,
+        .errorCallback = errorCallback == NULL ? nullptr : errorCallback,
+        .timeoutCallback = timeoutCallback == NULL ? nullptr : timeoutCallback,
+        .responseCustomCallback = responseCustomCallback == NULL ? nullptr : responseCustomCallback};
     if (!responseQueue.Put(reinterpret_cast<u8*>(&newResponseCallback), sizeof(ResponseCallback))) {
         responseQueue.DiscardLast();  // success str
         responseQueue.DiscardLast();  // error str
@@ -194,7 +200,7 @@ bool CellularModule::PushReturnCodes(Head head, Tail... tail) {
 }
 
 bool CellularModule::PushDelayQueue(const u8& delayDs, const AtCommandCallback& delayCallback) {
-    return PushResponseQueue(delayDs, nullptr, nullptr, delayCallback, DELAY_RESPONSE, DELAY_RESPONSE, DELAY);
+    return PushResponseQueue(delayDs, nullptr, nullptr, delayCallback, nullptr, DELAY_RESPONSE, DELAY_RESPONSE, DELAY);
 }
 
 void CellularModule::ProcessResponseQueue(const char* response) {
@@ -213,6 +219,9 @@ void CellularModule::ProcessResponseQueue(const char* response) {
         responsePassedTimeDs = 0;
         return;
     }
+    // custom callback
+    AtCommandCustomCallback responseCustomCallback = GetResopnseCustomCallback();
+    if (responseCustomCallback != nullptr) { (this->*responseCustomCallback)(const_cast<char*>(response)); }
     // check success str
     const u16 successStrLen = GetSuccessStrLength();
     char successStr[successStrLen + 1];
@@ -223,16 +232,18 @@ void CellularModule::ProcessResponseQueue(const char* response) {
     GS->terminal.SeggerRttPutString(successStr);
     logt(CELLSEND_TAG, "get response:%s", successStr);
     // check return code
-    const u8 returnCodeNum = GetReturnCodeNum();
+    const i8 returnCodeNum = GetReturnCodeNum();
     if (returnCodeNum != 0) {
         const char tokens[2] = {' ', ','};
         GS->terminal.TokenizeLine(const_cast<char*>(response), strlen(response), tokens);
         const char** commandArgsPtr = GS->terminal.getCommandArgsPtr();
+        bool didError;
         for (u8 ii = 0; ii < returnCodeNum; ++ii) {
-            // not string(-128 to 128)
-            const char returnCode = GetReturnCode(ii);
+            const i8 returnCode = GetReturnCode(ii);
             if (returnCode == -1) { continue; }  // -1 is non check return code
-            if (atoi(commandArgsPtr[ii + 1]) != returnCode) {
+            didError = false;
+            i8 receiveReturnCode = Utility::StringToI8(commandArgsPtr[ii + 1], &didError);
+            if (didError || receiveReturnCode != returnCode) {
                 GS->terminal.SeggerRttPutString("wrong return code:");
                 GS->terminal.SeggerRttPutString(commandArgsPtr[ii]);
                 AtCommandCallback errorCallback = GetErrorCallback();
@@ -241,11 +252,11 @@ void CellularModule::ProcessResponseQueue(const char* response) {
                 return;
             }
         }
-        GS->terminal.SeggerRttPutString("success response\n");
     }
+    GS->terminal.SeggerRttPutString("success response\n");
     AtCommandCallback successCallback = GetSuccessCallback();
-    if (successCallback != nullptr) { (this->*successCallback)(); }
     DiscardResponseQueue();
+    if (successCallback != nullptr) { (this->*successCallback)(); }
 }
 
 void CellularModule::ProcessResponseTimeout(u16 passedTimeDs) {
@@ -262,20 +273,21 @@ void CellularModule::ProcessResponseTimeout(u16 passedTimeDs) {
     // #endif
     const ResponseTimeoutType responseTimeoutType = GetResponseTimeoutType();
     const AtCommandCallback timeoutCallback = GetTimeoutCallback();
-    if (timeoutCallback != nullptr) { (this->*(timeoutCallback))(); }
     switch (responseTimeoutType) {
         case SUSPEND:
             CleanAtCommandQueue();
             CleanResponseQueue();
             break;
-        case CONTINUE:
+        case CONTINUE_NON_DISCARD:
             break;
+        case CONTINUE:
         case DELAY:
             DiscardResponseQueue();
             break;
         default:
             break;
     }
+    if (timeoutCallback != nullptr) { (this->*(timeoutCallback))(); }
     return;
 }
 
@@ -309,10 +321,10 @@ void CellularModule::TurnOn() {
     PushDelayQueue(0, &CellularModule::ChangeStatusWakingup);
     // waking up module needs 15sec.
     PushResponseQueue(150, nullptr, &CellularModule::WakeupFailedCallback, &CellularModule::WakeupFailedCallback,
-                      "RDY");
+                      nullptr, "RDY");
     // After receive following packet, check module accepting AT command
     PushResponseQueue(ATCOMMAND_TIMEOUTDS * 5, nullptr, &CellularModule::WakeupFailedCallback,
-                      &CellularModule::WakeupFailedCallback, "+QIND: PB DONE");
+                      &CellularModule::WakeupFailedCallback, nullptr, "+QIND: PB DONE");
     PushDelayQueue(5, &CellularModule::ProcessAtCommandQueue);
     PushAtCommandQueue("AT");
     PushResponseQueue(ATCOMMAND_TIMEOUTDS, &CellularModule::ProcessAtCommandQueue,
@@ -344,7 +356,8 @@ void CellularModule::WakeupSuccessCallback() {
 
 void CellularModule::TurnOff() {
     PushAtCommandQueue("AT+QPOWD");
-    PushResponseQueue(100, &CellularModule::SuspendPower, nullptr, &CellularModule::SuspendPower, "POWERED DOWN");
+    PushResponseQueue(100, &CellularModule::SuspendPower, nullptr, &CellularModule::SuspendPower, nullptr,
+                      "POWERED DOWN");
     ProcessAtCommandQueue();
 }
 
@@ -368,16 +381,17 @@ void CellularModule::ConfigTcpIpParameter() {
 void CellularModule::CheckNetworkRegistrationStatus() {
     PushAtCommandQueue("AT+CGREG?");
     PushResponseQueue(
-        ATCOMMAND_TIMEOUTDS, &CellularModule::ActivatePdpContext,
+        ATCOMMAND_TIMEOUTDS * 10, &CellularModule::ActivatePdpContext,
         isNetworkStatusReCheck ? &CellularModule::SimActivateFailed : &CellularModule::ConfigTcpIpParameter,
-        &CellularModule::SimActivateFailed, "+CGREG", DEFAULT_ERROR, isNetworkStatusReCheck ? SUSPEND : CONTINUE, -1,
-        1);
-    PushAtCommandQueue("AT+CEREG?");
-    PushResponseQueue(
-        ATCOMMAND_TIMEOUTDS, &CellularModule::ActivatePdpContext,
-        isNetworkStatusReCheck ? &CellularModule::SimActivateFailed : &CellularModule::ConfigTcpIpParameter,
-        &CellularModule::SimActivateFailed, "+CEREG", DEFAULT_ERROR, isNetworkStatusReCheck ? SUSPEND : CONTINUE, -1,
-        1);
+        &CellularModule::SimActivateFailed, nullptr, "+CGREG", DEFAULT_ERROR,
+        isNetworkStatusReCheck ? SUSPEND : CONTINUE_NON_DISCARD, -1, 1);
+    // never call following command and receving response
+    // PushAtCommandQueue("AT+CEREG?");
+    // PushResponseQueue(
+    //     ATCOMMAND_TIMEOUTDS, &CellularModule::ActivatePdpContext,
+    //     isNetworkStatusReCheck ? &CellularModule::SimActivateFailed : &CellularModule::ConfigTcpIpParameter,
+    //     &CellularModule::SimActivateFailed, "+CEREG", DEFAULT_ERROR,
+    //     isNetworkStatusReCheck ? SUSPEND : CONTINUE_NON_DISCARD, -1, 1);
     ProcessAtCommandQueue();
 }
 
@@ -409,11 +423,67 @@ void CellularModule::SimActivateFailed() {
     ProcessAtCommandSequenceQueue();
 }
 
+void CellularModule::SocketOpen() {
+    GS->terminal.SeggerRttPutString("Socket Open function fired\n");
+    CheckedMemset(connectedIds, 0, sizeof(connectedIds));
+    PushAtCommandQueue("AT+QISTATE?");
+    PushResponseQueue(ATCOMMAND_TIMEOUTDS, &CellularModule::PushSocketOpenCommandAndResponse,
+                      &CellularModule::SocketOpenFailed, &CellularModule::SocketOpenFailed,
+                      &CellularModule::ParseConnectedId);
+    ProcessAtCommandQueue();
+}
+
+void CellularModule::PushSocketOpenCommandAndResponse() {
+    u8 _connectId;
+    for (_connectId = 0; _connectId < CONNECT_ID_NUM; ++_connectId) {
+        connectId = _connectId;
+        if (!connectedIds[_connectId]) { break; }
+    }
+    if (_connectId == CONNECT_ID_NUM) {
+        SocketOpenFailed();
+        return;
+    }
+    char socketOpenCommand[128];
+    snprintf(socketOpenCommand, 127, "AT+QIOPEN=1,%d,\"UDP\",\"harvest.soracom.io\",8514", connectId);
+    PushAtCommandQueue(socketOpenCommand);
+    PushResponseQueue(1500, &CellularModule::SocketOpenSuccess, &CellularModule::SocketOpenFailed,
+                      &CellularModule::SocketOpenFailed, nullptr, "+QIOPEN:", DEFAULT_ERROR, SUSPEND, connectId, 0);
+    ProcessAtCommandQueue();
+}
+
+void CellularModule::SocketOpenSuccess() {
+    GS->terminal.SeggerRttPutString("socket open success\n");
+    commandSequenceStatus = ErrorType::SUCCESS;
+    ProcessAtCommandSequenceQueue();
+}
+
+void CellularModule::SocketOpenFailed() {
+    GS->terminal.SeggerRttPutString("socket open failed\n");
+    commandSequenceStatus = ErrorType::INTERNAL;
+    ProcessAtCommandSequenceQueue();
+}
+
+void CellularModule::ParseConnectedId(void* _response) {
+    const char* response = reinterpret_cast<char*>(_response);
+    const char* checkStr = "+QISTATE";
+    const u8 checkLen = strlen(checkStr);
+    if (strlen(response) < checkLen || strncmp(response, checkStr, checkLen) != 0) { return; }
+    const char tokens[2] = {' ', ','};
+    const i32 commandArgsSize = GS->terminal.TokenizeLine(const_cast<char*>(response), strlen(response), tokens);
+    if (commandArgsSize < 2) { return; }
+    const char** commandArgsPtr = GS->terminal.getCommandArgsPtr();
+    bool didError = false;
+    u8 connectedId = Utility::StringToU8(commandArgsPtr[1], &didError);
+    if (didError) { return; }
+    connectedIds[connectedId] = true;
+}
+
 void CellularModule::SendFiredNodeIdListByCellular(const NodeId* nodeIdList) {
     GS->terminal.SeggerRttPutString("SendFiredNodeIdListByCellular");
     commandSequenceStatus = ErrorType::SUCCESS;
-    // PushAtCommandSequenceQueue(&CellularModule::Wakeup);
+    PushAtCommandSequenceQueue(&CellularModule::Wakeup);
     PushAtCommandSequenceQueue(&CellularModule::SimActivate, 10);
+    PushAtCommandSequenceQueue(&CellularModule::SocketOpen, 10);
     ProcessAtCommandSequenceQueue();
 }
 
