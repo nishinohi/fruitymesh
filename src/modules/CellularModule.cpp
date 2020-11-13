@@ -444,7 +444,7 @@ void CellularModule::PushSocketOpenCommandAndResponse() {
         return;
     }
     char socketOpenCommand[128];
-    snprintf(socketOpenCommand, 127, "AT+QIOPEN=1,%d,\"UDP\",\"harvest.soracom.io\",8514", connectId);
+    snprintf(socketOpenCommand, 128, "AT+QIOPEN=1,%d,\"UDP\",\"harvest.soracom.io\",8514", connectId);
     PushAtCommandQueue(socketOpenCommand);
     PushResponseQueue(1500, &CellularModule::SocketOpenSuccess, &CellularModule::SocketOpenFailed,
                       &CellularModule::SocketOpenFailed, nullptr, "+QIOPEN:", DEFAULT_ERROR, SUSPEND, connectId, 0);
@@ -478,12 +478,70 @@ void CellularModule::ParseConnectedId(void* _response) {
     connectedIds[connectedId] = true;
 }
 
-void CellularModule::SendFiredNodeIdListByCellular(const NodeId* nodeIdList) {
+void CellularModule::SendFiredNodeList() {
+    char pushQueueBuffer[18];
+    snprintf(pushQueueBuffer, 18, "AT+QISEND=%d,%d", connectId, strlen(sendBuffer));
+    PushAtCommandQueue(pushQueueBuffer);
+    PushDelayQueue(ATCOMMAND_TIMEOUTDS, &CellularModule::SendBuffer);
+    PushResponseQueue(ATCOMMAND_TIMEOUTDS * 10, nullptr, &CellularModule::SendFiredNodeListFailed,
+                      &CellularModule::SendFiredNodeListFailed, nullptr, "SEND OK");
+    PushResponseQueue(ATCOMMAND_TIMEOUTDS * 10, &CellularModule::ProcessAtCommandQueue,
+                      &CellularModule::SendFiredNodeListFailed, &CellularModule::SendFiredNodeListFailed, nullptr,
+                      "+QIURC");
+    snprintf(pushQueueBuffer, 18, "AT+QISEND=%d,0", connectId);
+    PushAtCommandQueue(pushQueueBuffer);
+    PushResponseQueue(ATCOMMAND_TIMEOUTDS * 10, &CellularModule::SendFiredNodeListSuccess,
+                      &CellularModule::SendFiredNodeListFailed, &CellularModule::SendFiredNodeListFailed, nullptr,
+                      "+QISEND", DEFAULT_ERROR, SUSPEND, strlen(sendBuffer));
+    ProcessAtCommandQueue();
+}
+void CellularModule::SendFiredNodeListSuccess() {
+    GS->terminal.SeggerRttPutString("SendPacketSuccess");
+    commandSequenceStatus = ErrorType::SUCCESS;
+    ProcessAtCommandSequenceQueue();
+}
+void CellularModule::SendFiredNodeListFailed() {
+    GS->terminal.SeggerRttPutString("Failed Send Packet");
+    commandSequenceStatus = ErrorType::INTERNAL;
+    ProcessAtCommandSequenceQueue();
+}
+
+void CellularModule::CreateNodeIdListJson(const NodeId* nodeIdList, const size_t& listLen, char* json) {
+    const char temp[] = "{\"nodeId\":[";
+    CheckedMemcpy(json, temp, strlen(temp));
+    u16 jsonLen = strlen(temp);
+    // max char num of u16 is "65535]}" = 8
+    char nodeIdStr[8];
+    for (u8 ii = 0; ii < listLen; ++ii) {
+        snprintf(nodeIdStr, 8, ii == listLen - 1 ? "%d]}" : "%d,", nodeIdList[ii]);
+        const u8 nodeIdLen = strlen(nodeIdStr);
+        CheckedMemcpy(&json[jsonLen], nodeIdStr, nodeIdLen);
+        jsonLen += nodeIdLen;
+    }
+    json[jsonLen] = '\0';
+}
+
+void CellularModule::SendBuffer() {
+    GS->terminal.ClearReadBufferOffset();
+    GS->terminal.PutString(sendBuffer);
+    GS->terminal.SeggerRttPutString("send packet:");
+    GS->terminal.SeggerRttPutString(sendBuffer);
+    GS->terminal.SeggerRttPutChar('\n');
+    // After send "AT+QISEND", module receives "> " str without line feed code.
+    // So clear uart read buffer
+}
+
+void CellularModule::SendFiredNodeIdListByCellular(const NodeId* nodeIdList, const size_t& listLen) {
     GS->terminal.SeggerRttPutString("SendFiredNodeIdListByCellular");
+    if (listLen > NODE_ID_LIST_NUM) {
+        GS->terminal.SeggerRttPutString("Sending part of this list since too Many Node Id");
+    }
+    CreateNodeIdListJson(nodeIdList, listLen, sendBuffer);
     commandSequenceStatus = ErrorType::SUCCESS;
     PushAtCommandSequenceQueue(&CellularModule::Wakeup);
     PushAtCommandSequenceQueue(&CellularModule::SimActivate, 10);
     PushAtCommandSequenceQueue(&CellularModule::SocketOpen, 10);
+    PushAtCommandSequenceQueue(&CellularModule::SendFiredNodeList, 10);
     ProcessAtCommandSequenceQueue();
 }
 
@@ -501,7 +559,8 @@ TerminalCommandHandlerReturnType CellularModule::TerminalCommandHandler(const ch
         GS->terminal.SeggerRttPutString("cellsend");
         logt(CELLSEND_TAG, "Trying to send data by cellular module");
         // Wakeup();
-        SendFiredNodeIdListByCellular(NULL);
+        NodeId nodeIdList[] = {0, 1, 2, 3};
+        SendFiredNodeIdListByCellular(nodeIdList, sizeof(nodeIdList) / sizeof(NodeId));
         return TerminalCommandHandlerReturnType::SUCCESS;
     }
     if (TERMARGS(0, "cellularmod")) {

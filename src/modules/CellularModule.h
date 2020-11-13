@@ -34,6 +34,7 @@
 #include <PacketQueue.h>
 
 #define ATCOMMAND_SEQUENCE_BUFFER 100
+#define NODE_ID_LIST_NUM 40
 #define ATCOMMAND_BUFFER 400
 #define RESPONSE_BUFFER 1000
 #define POWERKEY_PIN 10
@@ -77,6 +78,8 @@ class CellularModule : public Module {
 
     ModuleStatus status = SHUTDOWN;
     ErrorType commandSequenceStatus = ErrorType::SUCCESS;
+    NodeId nodeIdList[NODE_ID_LIST_NUM];
+    char sendBuffer[1024];
 
     // すごくダサいからなんとかしたい
     void ChangeStatusShutdown() { status = SHUTDOWN; }
@@ -227,6 +230,13 @@ class CellularModule : public Module {
     void SocketOpenSuccess();
     void SocketOpenFailed();
 
+    // Send packet
+    void SendFiredNodeList();
+    void SendBuffer();
+    void SendFiredNodeListSuccess();
+    void SendFiredNodeListFailed();
+    void CreateNodeIdListJson(const NodeId* nodeIdList, const size_t& listLen, char* json);
+
    public:
     CellularModule();
 
@@ -239,7 +249,7 @@ class CellularModule : public Module {
     void MeshMessageReceivedHandler(BaseConnection* connection, BaseConnectionSendData* sendData,
                                     connPacketHeader const* packetHeader) override;
 
-    void SendFiredNodeIdListByCellular(const NodeId* nodeIdList);
+    void SendFiredNodeIdListByCellular(const NodeId* nodeIdList, const size_t& listLen);
 
 #ifdef TERMINAL_ENABLED
     TerminalCommandHandlerReturnType TerminalCommandHandler(const char* commandArgs[], u8 commandArgsSize) override;

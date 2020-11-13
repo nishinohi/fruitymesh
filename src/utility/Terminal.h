@@ -131,6 +131,7 @@ public:
     //Checks if a line is available or reads a line if input is detected
     void CheckAndProcessLine();
     void ProcessLine(char* line);
+    void ClearReadBufferOffset() { readBufferOffset = 0; }
     // default token is ' '
     i32 TokenizeLine(char* line, u16 lineLength, const char* tokens = nullptr);
 
