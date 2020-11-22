@@ -44,6 +44,8 @@ void setBoardConfiguration_github_nrf52(BoardConfiguration* c)
     //Additional boards can be put in here to be selected at runtime
     //BoardConfiguration* c = (BoardConfiguration*)config;
     //e.g. setBoard_123(c);
+    c->uartBaudRate = (u32)FruityHal::UartBaudrate::BAUDRATE_115200;
+
 }
 
 void setFeaturesetConfiguration_github_nrf52(ModuleConfiguration* config, void* module)
