@@ -131,7 +131,8 @@ public:
     //Checks if a line is available or reads a line if input is detected
     void CheckAndProcessLine();
     void ProcessLine(char* line);
-    i32 TokenizeLine(char* line, u16 lineLength);
+    // default token is ' '
+    i32 TokenizeLine(char* line, u16 lineLength, const char* tokens = nullptr);
 
     //Register a class that will be notified when the activation string is entered
     void AddTerminalJsonListener(TerminalJsonListener* callback);
