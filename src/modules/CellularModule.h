@@ -59,66 +59,8 @@ class CellularModule : public Module {
 
     enum CellularModuleActionResponseMessages { MESSAGE_0_RESPONSE = 0 };
 
-    // Cellular Module Status
-    enum ModuleStatus {
-        SHUTDOWN = 0,
-        POWER_SUPPLY,
-        WAKINGUP,
-        WAKEUPED,
-        SIM_ACTIVATED,
-    };
-
-    // When receiving AT Command response causes timeout, how to process left response queue
-    enum ResponseTimeoutType {
-        SUSPEND = 0,           // suspend receiving response and clear response queue
-        CONTINUE,              // continue receiving response and discard one response queue
-        CONTINUE_NON_DISCARD,  // continue receiving response.Use this type When timeout callback add new response queue
-        DELAY,                 // continue receiving response and discard one response queue
-    };
-
-    ModuleStatus status = SHUTDOWN;
-    ErrorType commandSequenceStatus = ErrorType::SUCCESS;
     NodeId nodeIdList[NODE_ID_LIST_NUM];
     char sendBuffer[1024];
-
-    // すごくダサいからなんとかしたい
-    void ChangeStatusShutdown() { status = SHUTDOWN; }
-    void ChangeStatusPowerSupply() { status = POWER_SUPPLY; }
-    void ChangeStatusWakingup() { status = WAKINGUP; }
-    void ChangeStatusWakeuped() { status = WAKEUPED; }
-    void ChangeStatusSimActivated() { status = SIM_ACTIVATED; }
-
-    typedef void (CellularModule::*AtCommandCallback)();
-    typedef void (CellularModule::*AtCommandCustomCallback)(void* context);
-
-    typedef struct {
-        AtCommandCallback sequenceCallback;
-        u8 retryCount;
-    } AtComandSequenceCallback;
-
-    // at command sequence queue
-    u32 atCommandSequenceBuffer[ATCOMMAND_SEQUENCE_BUFFER / sizeof(u32)];
-    PacketQueue atCommandSequenceQueue;
-    // at command queue
-    u32 atCommandBuffer[ATCOMMAND_BUFFER / sizeof(u32)] = {};
-    PacketQueue atCommandQueue;
-    // response buffer is aligned following
-    // <------------------------------ one unit -------------------------------->
-    // [successStr][errorStr][returnCodeNum][[returnCode] * n][response callback][...]
-    u32 responseBuffer[RESPONSE_BUFFER / sizeof(u32)];
-    PacketQueue responseQueue;
-    u16 responsePassedTimeDs = 0;
-    // Dse only refering last arg. Never change last arg content.
-    char* lastArg = nullptr;
-
-    typedef struct {
-        u16 timeoutDs;
-        ResponseTimeoutType responseTimeoutType;
-        AtCommandCallback successCallback;
-        AtCommandCallback errorCallback;
-        AtCommandCallback timeoutCallback;
-        AtCommandCustomCallback responseCustomCallback;
-    } ResponseCallback;
 
     CellularModuleConfiguration configuration;
 
@@ -138,103 +80,38 @@ class CellularModule : public Module {
     //####### Module messages end
     */
 
+    // read response
+    bool ReadReponseAndCheck(const char* succcessResponse, const u32& timeout,
+                             const char* errorResponse = DEFAULT_ERROR,
+                             FruityHal::TimerHandler timeoutCallback = nullptr);
+    bool ReadLine();  // true: receive line feed code, false: not receive line feed code
+    bool SendAtCommandAndCheck(const char* atCommand, const char* succcessResponse, const u32& timeout,
+                               const char* errorResponse = DEFAULT_ERROR,
+                               FruityHal::TimerHandler timeoutCallback = nullptr);
+
     // GPIO
     void PowerKeyPinSet() { FruityHal::GpioPinSet(POWERKEY_PIN); }
     void PowerKeyPinClear() { FruityHal::GpioPinClear(POWERKEY_PIN); }
-
-    void InitializeResponseCallback(ResponseCallback* responseCallback);
-
-    // AT Command sequence queue
-    void ProcessAtCommandSequenceQueue();
-    bool PushAtCommandSequenceQueue(const AtCommandCallback& sequenceCallback, const u8& retryCount = 0);
-    AtCommandCallback GetSequenceCallback() const {
-        return reinterpret_cast<AtComandSequenceCallback*>(atCommandSequenceQueue.PeekNext().data)->sequenceCallback;
-    }
-    u8 GetSequenceRetryCount() const {
-        return reinterpret_cast<AtComandSequenceCallback*>(atCommandSequenceQueue.PeekNext().data)->retryCount;
-    }
-
-    void SendAtCommand(char* atCommand, const u16& atCommandLen);
-    // get AT Command queue
-    // warning: receive char pointer does not contain '\0'.
-    char* GetAtCommandStr() const { return (char*)atCommandQueue.PeekNext().data; };
-    u16 GetAtCommandStrLength() const { return atCommandQueue.PeekNext().length; }
-    void DiscardAtCommandQueue() { atCommandQueue.DiscardNext(); }
-    void CleanAtCommandQueue() { atCommandQueue.Clean(); }
-    // get reponse queue
-    // warning: receive char pointer does not contain '\0'.
-    char* GetSuccessStr() const { return (char*)responseQueue.PeekNext().data; };
-    u16 GetSuccessStrLength() const { return responseQueue.PeekNext().length; }
-    char* GetErrorStr() const { return (char*)responseQueue.PeekNext(1).data; };
-    u16 GetErrorStrLength() const { return responseQueue.PeekNext(1).length; }
-    u8 GetReturnCodeNum() const { return *(responseQueue.PeekNext(2).data); };
-    i8 GetReturnCode(const u8& index) const { return *(responseQueue.PeekNext(3 + index).data); }
-    // 3 = [success str][error str][return code num]
-    ResponseCallback* GetResponseCallback() const {
-        return reinterpret_cast<ResponseCallback*>(responseQueue.PeekNext(GetReturnCodeNum() + 3).data);
-    }
-    u16 GetResponseTimeoutDs() const { return GetResponseCallback()->timeoutDs; }
-    ResponseTimeoutType GetResponseTimeoutType() const { return GetResponseCallback()->responseTimeoutType; }
-    AtCommandCallback GetSuccessCallback() const { return GetResponseCallback()->successCallback; }
-    AtCommandCallback GetErrorCallback() const { return GetResponseCallback()->errorCallback; }
-    AtCommandCallback GetTimeoutCallback() const { return GetResponseCallback()->timeoutCallback; }
-    AtCommandCustomCallback GetResopnseCustomCallback() const { return GetResponseCallback()->responseCustomCallback; }
-    void DiscardResponseQueue();
-    void CleanResponseQueue();
-    // queue util
-    bool IsEmptyQueue(const PacketQueue& queue) { return queue._numElements == 0; }
-
-    // AT Command Queue and Process
-    bool PushAtCommandQueue(const char* atCommand);
-    void ProcessAtCommandQueue();
-    // Response Queue and Process
-    template <class... ReturnCodes>
-    bool PushResponseQueue(const u16& timeoutDs, const AtCommandCallback& successCallback = nullptr,
-                           const AtCommandCallback& errorCallback = nullptr,
-                           const AtCommandCallback& timeoutCallback = nullptr,
-                           const AtCommandCustomCallback& responseCustomCallback = nullptr,
-                           const char* successStr = DEFAULT_SUCCESS, const char* errorStr = "ERROR",
-                           const ResponseTimeoutType& responseTimeoutType = SUSPEND, ReturnCodes... returnCodes);
-    template <class Head, class... Tail>
-    bool PushReturnCodes(Head head, Tail... tail);
-    bool PushReturnCodes() { return true; }
-    bool PushDelayQueue(const u8& delayDs, const AtCommandCallback& delayCallback = nullptr);
-    void ProcessResponseQueue(const char* response);
-    void ProcessResponseTimeout(u16 passedTimeDs);
-    void LoggingTimeoutResponse();
-
     // wake up
-    void Wakeup();
     void SupplyPower();
     void SuspendPower() { FruityHal::GpioPinClear(POWERSUPPLY_PIN); }
-    void TurnOn();
-    void WakeupSuccessCallback();
-    void WakeupFailedCallback();
+    bool TurnOn();
     void TurnOff();
-
     // sim activation
     void SimActivate();
     void CheckNetworkRegistrationStatus();
     void ConfigTcpIpParameter();
     bool isNetworkStatusReCheck = false;
     void ActivatePdpContext();
-    void SimActivateSuccess();
-    void SimActivateFailed();
-
     // Socket Open
     bool connectedIds[CONNECT_ID_NUM];
     u8 connectId;
     void SocketOpen();
     void ParseConnectedId(void* _response);
     void PushSocketOpenCommandAndResponse();
-    void SocketOpenSuccess();
-    void SocketOpenFailed();
-
     // Send packet
     void SendFiredNodeList();
     void SendBuffer();
-    void SendFiredNodeListSuccess();
-    void SendFiredNodeListFailed();
     void CreateNodeIdListJson(const NodeId* nodeIdList, const size_t& listLen, char* json);
 
    public:
