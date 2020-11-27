@@ -132,6 +132,7 @@ public:
     void CheckAndProcessLine();
     void ProcessLine(char* line);
     void ClearReadBufferOffset() { readBufferOffset = 0; }
+    bool UartCheckLineFeedCode(const u8& byteBuffer);
     // default token is ' '
     i32 TokenizeLine(char* line, u16 lineLength, const char* tokens = nullptr);
 
@@ -149,6 +150,7 @@ public:
 
     const char** getCommandArgsPtr();
     u8 getReadBufferOffset();
+    void setReadBufferOffset(const u8& newValue) { readBufferOffset = newValue; }
     char* getReadBuffer();
 
     void EnableCrcChecks();
@@ -162,7 +164,6 @@ public:
 private:
     void UartEnable(bool promptAndEchoMode);
     void UartCheckAndProcessLine();
-    bool UartCheckLineFeedCode(const u8& byteBuffer);
     //Read - blocking (non-interrupt based)
     void UartReadLineBlocking();
     //Write (always blocking)
