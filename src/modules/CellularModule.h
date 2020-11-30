@@ -81,13 +81,18 @@ class CellularModule : public Module {
     */
 
     // read response
+    template <class... T>
     bool ReadReponseAndCheck(const char* succcessResponse, const u32& timeout,
-                             const char* errorResponse = DEFAULT_ERROR,
-                             FruityHal::TimerHandler timeoutCallback = nullptr);
+                             const char* errorResponse = DEFAULT_ERROR, const bool& waitLineFeedCode = true,
+                             FruityHal::TimerHandler timeoutCallback = nullptr, T... returnCodes);
+    // this method is only use for i16 type
+    template <class... T>
+    bool CheckResponseReturnCodes(const char* response, T... returnCodes);
     bool ReadLine();  // true: receive line feed code, false: not receive line feed code
+    template <class... T>
     bool SendAtCommandAndCheck(const char* atCommand, const char* succcessResponse, const u32& timeout,
-                               const char* errorResponse = DEFAULT_ERROR,
-                               FruityHal::TimerHandler timeoutCallback = nullptr);
+                               const char* errorResponse = DEFAULT_ERROR, const bool& waitLineFeedCode = true,
+                               FruityHal::TimerHandler timeoutCallback = nullptr, T... returnCodes);
 
     // GPIO
     void PowerKeyPinSet() { FruityHal::GpioPinSet(POWERKEY_PIN); }
@@ -96,11 +101,10 @@ class CellularModule : public Module {
     void SupplyPower();
     void SuspendPower() { FruityHal::GpioPinClear(POWERSUPPLY_PIN); }
     bool TurnOn();
-    void TurnOff();
+    bool TurnOff();
     // sim activation
-    void SimActivate();
-    void CheckNetworkRegistrationStatus();
-    void ConfigTcpIpParameter();
+    bool SimActivate();
+    bool CheckNetworkRegistrationStatus(const u32& timeout);
     bool isNetworkStatusReCheck = false;
     void ActivatePdpContext();
     // Socket Open

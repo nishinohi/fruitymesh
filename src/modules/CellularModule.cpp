@@ -34,12 +34,18 @@
 #include <Utility.h>
 #include <mini-printf.h>
 
+#include <initializer_list>
+
 #include "GlobalState.h"
 #include "Terminal.h"
 
 #define CELLSEND_TAG "CELLSEND"
 #define WAKEUP_SIGNAL_TIME_MS 300
-#define ATCOMMAND_TIMEOUT_MS 300
+#define ATCOMMAND_TIMEOUT_MS 500
+
+#define APN "soracom.io"
+#define USERNAME "sora"
+#define PASSWORD "sora"
 
 constexpr u8 CELLULAR_MODULE_CONFIG_VERSION = 1;
 
@@ -76,24 +82,55 @@ void CellularModule::TimerEventHandler(u16 passedTimeDs) {
     // Do stuff on timer...
 }
 
+template <class... T>
 bool CellularModule::ReadReponseAndCheck(const char* succcessResponse, const u32& timeout, const char* errorResponse,
-                                         FruityHal::TimerHandler timeoutCallback) {
+                                         const bool& waitLineFeedCode, FruityHal::TimerHandler timeoutCallback,
+                                         T... returnCodes) {
     u32 preTimeMs = FruityHal::GetRtcMs();
     GS->terminal.lineToReadAvailable = false;
     GS->terminal.ClearReadBufferOffset();
+    const char* response = GS->terminal.getReadBuffer();
     while (FruityHal::GetRtcMs() - preTimeMs < timeout) {
-        if (FruityHal::UartCheckInputAvailable()) { ReadLine(); }
-        if (strncmp(errorResponse, GS->terminal.getReadBuffer(), strlen(errorResponse)) == 0) { return false; }
-        if (strncmp(succcessResponse, GS->terminal.getReadBuffer(), strlen(succcessResponse)) == 0) {
-            GS->terminal.SeggerRttPutString("receive success\n");
-            GS->terminal.SeggerRttPutString(succcessResponse);
-            GS->terminal.SeggerRttPutString("\n");
-            return true;
+        if (!FruityHal::UartCheckInputAvailable()) { continue; }
+        if (!ReadLine() && waitLineFeedCode) { continue; }
+        if (strncmp(errorResponse, response, strlen(errorResponse)) == 0) { return false; }
+        if (strncmp(succcessResponse, response, strlen(succcessResponse)) == 0) {
+            if (sizeof...(returnCodes) < 1) {
+                GS->terminal.SeggerRttPutString("receive: ");
+                GS->terminal.SeggerRttPutString(response);
+                GS->terminal.SeggerRttPutString("\n");
+                return true;
+            }
+            if (CheckResponseReturnCodes(response, returnCodes...)) {
+                GS->terminal.SeggerRttPutString("receive success return Code\n");
+                return true;
+            }
+            return false;
         }
     }
     // if (timeoutCallback != nullptr) { timeoutCallback(NULL); }
     GS->terminal.SeggerRttPutString("timeout\n");
     return false;
+}
+
+template <class... T>
+bool CellularModule::CheckResponseReturnCodes(const char* response, T... returnCodes) {
+    const char tokens[2] = {' ', ','};
+    const i32 commandArgsSize = GS->terminal.TokenizeLine(const_cast<char*>(response), strlen(response), tokens, 2);
+    if (commandArgsSize == -1 || static_cast<u32>(commandArgsSize) < sizeof...(returnCodes) + 1) { return false; }
+    const char* returnCodeArgPtr = GS->terminal.getCommandArgsPtr()[1];
+    bool didError;
+    for (i32 returnCode : std::initializer_list<i32>{returnCodes...}) {
+        if (returnCode == -1) { continue; }  // -1 is skipped
+        didError = false;
+        i32 receivedReturnCode = Utility::StringToI16(returnCodeArgPtr, &didError);
+        char temp[5];
+        snprintf(temp, 5, "retCode:%d\n", receivedReturnCode);
+        GS->terminal.SeggerRttPutString(temp);
+        if (didError || receivedReturnCode != returnCode) { return false; }
+        ++returnCodeArgPtr;
+    }
+    return true;
 }
 
 bool CellularModule::ReadLine() {
@@ -115,19 +152,24 @@ bool CellularModule::ReadLine() {
     readBuffer[GS->terminal.getReadBufferOffset()] = '\0';
     // get only line feed code
     if (GS->terminal.getReadBufferOffset() <= 0) { return false; }
+    GS->terminal.SeggerRttPutString("ReadLine: ");
+    GS->terminal.SeggerRttPutString(readBuffer);
+    GS->terminal.SeggerRttPutString("\n");
     FruityHal::SetPendingEventIRQ();
     GS->terminal.ClearReadBufferOffset();
     return true;
 }
 
+template <class... T>
 bool CellularModule::SendAtCommandAndCheck(const char* atCommand, const char* succcessResponse, const u32& timeout,
-                                           const char* errorResponse, FruityHal::TimerHandler timeoutCallback) {
+                                           const char* errorResponse, const bool& waitLineFeedCode,
+                                           FruityHal::TimerHandler timeoutCallback, T... returnCodes) {
     const u8 atCommandLen = strlen(atCommand) + 2;
     char atCommandWithCr[atCommandLen];
-    CheckedMemset(atCommandWithCr, '\0', atCommandLen);
     snprintf(atCommandWithCr, atCommandLen, "%s\r", atCommand);
     FruityHal::UartPutStringBlockingWithTimeout(atCommandWithCr);
-    return ReadReponseAndCheck(succcessResponse, timeout, errorResponse, timeoutCallback);
+    return ReadReponseAndCheck(succcessResponse, timeout, errorResponse, waitLineFeedCode, timeoutCallback,
+                               returnCodes...);
 }
 
 void CellularModule::SupplyPower() {
@@ -141,17 +183,57 @@ bool CellularModule::TurnOn() {
     if (!ReadReponseAndCheck("+QIND: PB DONE", 3000)) { return false; }
     FruityHal::DelayMs(100);
     if (!SendAtCommandAndCheck("AT", "OK", ATCOMMAND_TIMEOUT_MS)) { return false; }
+    if (!SendAtCommandAndCheck("ATE0", "OK", ATCOMMAND_TIMEOUT_MS)) { return false; }
+    if (!SendAtCommandAndCheck("AT+QURCCFG=\"urcport\",\"uart1\"", "OK", ATCOMMAND_TIMEOUT_MS)) { return false; }
     return true;
 }
 
-void CellularModule::TurnOff() {}
+bool CellularModule::TurnOff() {
+    if (!SendAtCommandAndCheck("AT+QPOWD", "POWERED DOWN", 10000)) {
+        SuspendPower();
+        return false;
+    }
+    SuspendPower();
+    return true;
+}
 
-void CellularModule::SimActivate() {}
+bool CellularModule::SimActivate() {
+    if (!CheckNetworkRegistrationStatus(2000)) {
+        if (!SendAtCommandAndCheck("AT+QICSGP=1,1,\"" APN "\",\"" USERNAME "\",\"" PASSWORD "\"", "OK", 3000)) {
+            return false;
+        }
+        if (!CheckNetworkRegistrationStatus(10000)) { return false; }
+    };
+    if (!SendAtCommandAndCheck("AT+QIACT=1", "OK", 15000)) { return false; }
+    // can't receive "+QIGETERROR"
+    // if (!SendAtCommandAndCheck("AT+QIGETERROR", "+QIGETERROR", ATCOMMAND_TIMEOUT_MS, DEFAULT_ERROR, true, nullptr,
+    // 0)) {
+    //     return false;
+    // }
+    return true;
+}
 
-// TODO: When called CheckNetworkRegistrationStatus for second time and failed, call SimActivateFailed
-void CellularModule::ConfigTcpIpParameter() {}
-
-void CellularModule::CheckNetworkRegistrationStatus() {}
+bool CellularModule::CheckNetworkRegistrationStatus(const u32& timeout) {
+    i32 prev = FruityHal::GetRtcMs();
+    auto CheckReturnCode = []() -> bool {
+        const char* response = GS->terminal.getReadBuffer();
+        const char tokens[2] = {' ', ','};
+        const i32 commandArgsSize = GS->terminal.TokenizeLine(const_cast<char*>(response), strlen(response), tokens, 2);
+        if (commandArgsSize < 3) { return false; }
+        const char* commandArgsPtr = GS->terminal.getCommandArgsPtr()[2];  // check second return Code
+        bool didError = false;
+        i16 returnCode = Utility::StringToI16(commandArgsPtr, &didError);
+        if (didError) { return false; }
+        return returnCode == 1 || returnCode == 5;
+    };
+    while (FruityHal::GetRtcMs() - prev < timeout) {
+        if (!SendAtCommandAndCheck("AT+CGREG?", "+CGREG", ATCOMMAND_TIMEOUT_MS)) { continue; }
+        if (CheckReturnCode()) { return true; }
+        if (!SendAtCommandAndCheck("AT+CEREG?", "+CEREG", ATCOMMAND_TIMEOUT_MS)) { continue; }
+        if (CheckReturnCode()) { return true; }
+    }
+    return false;
+}
 
 void CellularModule::ActivatePdpContext() {}
 
@@ -180,7 +262,10 @@ void CellularModule::CreateNodeIdListJson(const NodeId* nodeIdList, const size_t
 
 void CellularModule::SendBuffer() {}
 
-void CellularModule::SendFiredNodeIdListByCellular(const NodeId* nodeIdList, const size_t& listLen) { TurnOn(); }
+void CellularModule::SendFiredNodeIdListByCellular(const NodeId* nodeIdList, const size_t& listLen) {
+    if (!TurnOn()) { return; }
+    if (!SimActivate()) { return; }
+}
 
 #if IS_ACTIVE(BUTTONS)
 void CellularModule::ButtonHandler(u8 buttonId, u32 holdTime) { logs("button pressed"); }

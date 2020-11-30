@@ -134,7 +134,7 @@ public:
     void ClearReadBufferOffset() { readBufferOffset = 0; }
     bool UartCheckLineFeedCode(const u8& byteBuffer);
     // default token is ' '
-    i32 TokenizeLine(char* line, u16 lineLength, const char* tokens = nullptr);
+    i32 TokenizeLine(char* line, u16 lineLength, const char* tokens = nullptr, const u8& tokenLen = 0);
 
     //Register a class that will be notified when the activation string is entered
     void AddTerminalJsonListener(TerminalJsonListener* callback);
