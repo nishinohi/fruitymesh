@@ -33,15 +33,9 @@
 #include <Module.h>
 #include <PacketQueue.h>
 
-#define ATCOMMAND_SEQUENCE_BUFFER 100
+#include "AtCommandController.h"
+
 #define NODE_ID_LIST_NUM 40
-#define ATCOMMAND_BUFFER 400
-#define RESPONSE_BUFFER 1000
-#define POWERKEY_PIN 10
-#define POWERSUPPLY_PIN 11
-#define DEFAULT_SUCCESS "OK"
-#define DEFAULT_ERROR "ERROR"
-#define CONNECT_ID_NUM 12
 
 /*
  * This is a cellular for a FruityMesh module.
@@ -60,7 +54,9 @@ class CellularModule : public Module {
     enum CellularModuleActionResponseMessages { MESSAGE_0_RESPONSE = 0 };
 
     NodeId nodeIdList[NODE_ID_LIST_NUM];
-    char sendBuffer[1024];
+    // char sendBuffer[1024];
+
+    AtCommandController atComCtl;
 
     CellularModuleConfiguration configuration;
 
@@ -79,44 +75,6 @@ class CellularModule : public Module {
     #pragma pack(pop)
     //####### Module messages end
     */
-
-    // read response
-    template <class... T>
-    bool ReadReponseAndCheck(const char* succcessResponse, const u32& timeout,
-                             const char* errorResponse = DEFAULT_ERROR, const bool& waitLineFeedCode = true,
-                             FruityHal::TimerHandler timeoutCallback = nullptr, T... returnCodes);
-    // this method is only use for i16 type
-    template <class... T>
-    bool CheckResponseReturnCodes(const char* response, T... returnCodes);
-    bool ReadLine();  // true: receive line feed code, false: not receive line feed code
-    template <class... T>
-    bool SendAtCommandAndCheck(const char* atCommand, const char* succcessResponse, const u32& timeout,
-                               const char* errorResponse = DEFAULT_ERROR, const bool& waitLineFeedCode = true,
-                               FruityHal::TimerHandler timeoutCallback = nullptr, T... returnCodes);
-
-    // GPIO
-    void PowerKeyPinSet() { FruityHal::GpioPinSet(POWERKEY_PIN); }
-    void PowerKeyPinClear() { FruityHal::GpioPinClear(POWERKEY_PIN); }
-    // wake up
-    void SupplyPower();
-    void SuspendPower() { FruityHal::GpioPinClear(POWERSUPPLY_PIN); }
-    bool TurnOn();
-    bool TurnOff();
-    // sim activation
-    bool SimActivate();
-    bool CheckNetworkRegistrationStatus(const u32& timeout);
-    bool isNetworkStatusReCheck = false;
-    void ActivatePdpContext();
-    // Socket Open
-    bool connectedIds[CONNECT_ID_NUM];
-    u8 connectId;
-    void SocketOpen();
-    void ParseConnectedId(void* _response);
-    void PushSocketOpenCommandAndResponse();
-    // Send packet
-    void SendFiredNodeList();
-    void SendBuffer();
-    void CreateNodeIdListJson(const NodeId* nodeIdList, const size_t& listLen, char* json);
 
    public:
     CellularModule();
