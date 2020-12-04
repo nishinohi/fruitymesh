@@ -72,9 +72,6 @@ bool AtCommandController::CheckResponseReturnCodes(const char* response, T... re
         if (returnCode == -1) { continue; }  // -1 is skipped
         didError = false;
         i32 receivedReturnCode = Utility::StringToI16(returnCodeArgPtr, &didError);
-        char temp[5];
-        snprintf(temp, 5, "retCode:%d\n", receivedReturnCode);
-        GS->terminal.SeggerRttPutString(temp);
         if (didError || receivedReturnCode != returnCode) { return false; }
         ++returnCodeArgPtr;
     }
@@ -115,6 +112,9 @@ bool AtCommandController::SendAtCommandAndCheck(const char* atCommand, const u32
     const u8 atCommandLen = strlen(atCommand) + 2;
     char atCommandWithCr[atCommandLen];
     snprintf(atCommandWithCr, atCommandLen, "%s\r", atCommand);
+    GS->terminal.SeggerRttPutString("Send:");
+    GS->terminal.SeggerRttPutString(atCommand);
+    GS->terminal.SeggerRttPutString("\n");
     FruityHal::UartPutStringBlockingWithTimeout(atCommandWithCr);
     return ReadResponseAndCheck(timeout, succcessResponse, errorResponse, waitLineFeedCode, timeoutCallback,
                                 returnCodes...);
@@ -136,9 +136,9 @@ bool AtCommandController::TurnOnOrReset(const u16& timeout) {
     FruityHal::DelayMs(WAKEUP_SIGNAL_TIME_MS);
     FruityHal::GpioPinClear(POWERKEY_PIN);
     // receive start message
-    if (!ReadResponseAndCheck(10000, "RDY")) { return false; }
+    if (!ReadResponseAndCheck(12000, "RDY")) { return false; }
     if (!ReadResponseAndCheck(3000, "+QIND: PB DONE")) { return false; }
-    FruityHal::DelayMs(100);
+    FruityHal::DelayMs(ATCOMMAND_TIMEOUT_MS);
     if (!SendAtCommandAndCheck("AT")) { return false; }
     if (!SendAtCommandAndCheck("ATE0")) { return false; }
     if (!SendAtCommandAndCheck("AT+QURCCFG=\"urcport\",\"uart1\"")) { return false; }
@@ -156,10 +156,9 @@ bool AtCommandController::TurnOff(const u16& timeout) {
 
 bool AtCommandController::WaitForPSRegistration(const u32& timeout) {
     u32 prev = FruityHal::GetRtcMs();
-    auto CheckReturnCode = []() -> bool {
-        const char* response = GS->terminal.getReadBuffer();
+    auto CheckReturnCode = [](char* response) -> bool {
         const char tokens[2] = {' ', ','};
-        const i32 commandArgsSize = GS->terminal.TokenizeLine(const_cast<char*>(response), strlen(response), tokens, 2);
+        const i32 commandArgsSize = GS->terminal.TokenizeLine(response, strlen(response), tokens, 2);
         if (commandArgsSize < 3) { return false; }
         const char* commandArgsPtr = GS->terminal.getCommandArgsPtr()[2];  // check second return Code
         bool didError = false;
@@ -167,13 +166,17 @@ bool AtCommandController::WaitForPSRegistration(const u32& timeout) {
         if (didError) { return false; }
         return returnCode == 1 || returnCode == 5;
     };
+    char* response = GS->terminal.getReadBuffer();
+    bool result = false;
     while (FruityHal::GetRtcMs() - prev < timeout) {
-        if (!SendAtCommandAndCheck("AT+CGREG?", ATCOMMAND_TIMEOUT_MS, "+CGREG")) { continue; }
-        if (CheckReturnCode()) { return true; }
-        if (!ReadResponseAndCheck()) { continue; }
-        if (!SendAtCommandAndCheck("AT+CEREG?", ATCOMMAND_TIMEOUT_MS, "+CEREG")) { continue; }
-        if (CheckReturnCode()) { return true; }
-        if (!ReadResponseAndCheck()) { continue; }
+        if (!SendAtCommandAndCheck("AT+CGREG?", ATCOMMAND_TIMEOUT_MS, "+CGREG")) { return false; }
+        result = CheckReturnCode(response);
+        if (!ReadResponseOK()) { return false; }
+        if (result) { return true; }
+        if (!SendAtCommandAndCheck("AT+CEREG?", ATCOMMAND_TIMEOUT_MS, "+CEREG")) { return false; }
+        result = CheckReturnCode(response);
+        if (!ReadResponseOK()) { return false; }
+        if (result) { return true; }
     }
     return false;
 }
@@ -183,21 +186,18 @@ bool AtCommandController::Activate(const char* accessPointName, const char* user
         char command[256];
         snprintf(command, 256, "AT+QICSGP=1,1,\"%s\",\"%s\",\"%s\",3", accessPointName, userName, password);
         if (!SendAtCommandAndCheck(command)) { return false; }
+        if (!WaitForPSRegistration(CONNECTION_WAIT_MS)) { return false; }
     }
-    if (!WaitForPSRegistration(CONNECTION_WAIT_MS)) { return false; }
     if (!SendAtCommandAndCheck("AT+QIACT=1", 15000)) { return false; }
-    if (!ReadResponseAndCheck()) { return false; }
     if (!SendAtCommandAndCheck("AT+QIGETERROR", ATCOMMAND_TIMEOUT_MS, "+QIGETERROR", DEFAULT_ERROR, true, nullptr, 0)) {
         return false;
     }
-    if (!ReadResponseAndCheck()) { return false; }
+    if (!ReadResponseOK()) { return false; }
     return true;
 }
 
 bool AtCommandController::SocketOpen(const char* host, const u16& port, const SocketType& socketType) {
     if (host == NULL || host == nullptr || strlen(host) == 0) { return false; }
-    bool connectIdUsed[CONNECT_ID_NUM];
-    CheckedMemset(connectIdUsed, 0, sizeof(connectIdUsed) * sizeof(bool));
     if (!SendAtCommandAndCheck("AT+QISTATE", CONNECTION_WAIT_MS, "OK|+QISTATE")) { return false; }
     char* response = GS->terminal.getReadBuffer();
     const char tokens[] = {' ', ','};

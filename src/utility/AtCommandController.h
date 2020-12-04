@@ -19,6 +19,7 @@ class AtCommandController {
                               const char* errorResponse = DEFAULT_ERROR, const bool& waitLineFeedCode = true,
                               FruityHal::TimerHandler timeoutCallback = nullptr, T... returnCodes);
     bool CheckMultiResponse(const char* response, const char* checkStr);
+    bool ReadResponseOK(const u32& timeout = ATCOMMAND_TIMEOUT_MS) { return ReadResponseAndCheck(timeout); }
     // this method is only use for i16 type
     template <class... T>
     bool CheckResponseReturnCodes(const char* response, T... returnCodes);
