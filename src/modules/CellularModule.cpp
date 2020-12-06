@@ -59,6 +59,7 @@ void CellularModule::ResetToDefaultConfiguration() {
     configuration.moduleId = moduleId;
     configuration.moduleActive = true;
     configuration.moduleVersion = CELLULAR_MODULE_CONFIG_VERSION;
+    FruityHal::EnableUart(true);
     // Set additional config values...
 }
 
@@ -82,10 +83,17 @@ void CellularModule::SendFiredNodeIdListByCellular(const NodeId* nodeIdList, con
     if (!atComCtl.TurnOnOrReset()) { return; }
     if (!atComCtl.Activate()) { return; }
     if (!atComCtl.SocketOpen("harvest.soracom.io", 8514, AtCommandController::SocketType::SOCKET_UDP)) { return; }
+    char data[] = "{\"time\":10}";
+    if (!atComCtl.SocketSend(atComCtl.GetConnectId(), reinterpret_cast<const u8*>(data), strlen(data))) { return; };
+    if (atComCtl.SocketReceive(atComCtl.GetConnectId(), NULL, 10, 10000) == -1) { return; }
 }
 
 #if IS_ACTIVE(BUTTONS)
-void CellularModule::ButtonHandler(u8 buttonId, u32 holdTime) { logs("button pressed"); }
+void CellularModule::ButtonHandler(u8 buttonId, u32 holdTime) {
+    GS->terminal.SeggerRttPutString("button lte");
+    NodeId nodeIdList[] = {0, 1, 2, 3};
+    SendFiredNodeIdListByCellular(nodeIdList, sizeof(nodeIdList) / sizeof(NodeId));
+}
 #endif
 
 #ifdef TERMINAL_ENABLED

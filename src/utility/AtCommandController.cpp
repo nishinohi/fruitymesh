@@ -13,6 +13,11 @@
 #define CONNECTION_WAIT_MS 10000  // 10 sec
 #define CONNECT_ID_NUM 12
 
+i32 AtCommandController::TokenizeResponse(char* response) {
+    const char tokens[] = {' ', ','};
+    return GS->terminal.TokenizeLine(response, strlen(response), tokens, 2);
+}
+
 // warning: If "waitLineFeedCode" is false, strlen(response) doesn't return correct value
 template <class... T>
 bool AtCommandController::ReadResponseAndCheck(const u32& timeout, const char* succcessResponse,
@@ -63,17 +68,25 @@ bool AtCommandController::CheckMultiResponse(const char* response, const char* c
 
 template <class... T>
 bool AtCommandController::CheckResponseReturnCodes(const char* response, T... returnCodes) {
-    const char tokens[2] = {' ', ','};
-    const i32 commandArgsSize = GS->terminal.TokenizeLine(const_cast<char*>(response), strlen(response), tokens, 2);
+    const i32 commandArgsSize = TokenizeResponse(const_cast<char*>(response));
     if (commandArgsSize == -1 || static_cast<u32>(commandArgsSize) < sizeof...(returnCodes) + 1) { return false; }
-    const char* returnCodeArgPtr = GS->terminal.getCommandArgsPtr()[1];
+    const char* returnCodeArgPtr;
     bool didError;
+    u8 argsIndex = 1;
     for (i32 returnCode : std::initializer_list<i32>{returnCodes...}) {
-        if (returnCode == -1) { continue; }  // -1 is skipped
+        returnCodeArgPtr = GS->terminal.getCommandArgsPtr()[argsIndex];
+        // -1 is skipped
+        if (returnCode == -1) {
+            ++argsIndex;
+            continue;
+        }
         didError = false;
         i32 receivedReturnCode = Utility::StringToI16(returnCodeArgPtr, &didError);
+        char temp[16];
+        snprintf(temp, 16, "rc:%d\n", receivedReturnCode);
+        GS->terminal.SeggerRttPutString(temp);
         if (didError || receivedReturnCode != returnCode) { return false; }
-        ++returnCodeArgPtr;
+        ++argsIndex;
     }
     return true;
 }
@@ -131,6 +144,13 @@ void AtCommandController::PowerSupply(const bool& on) {
 
 // TODO: reset function
 bool AtCommandController::TurnOnOrReset(const u16& timeout) {
+    // already started
+    // TODO: reset
+    if (SendAtCommandAndCheck("AT")) {
+        if (!SendAtCommandAndCheck("ATE0")) { return false; }
+        if (!SendAtCommandAndCheck("AT+QURCCFG=\"urcport\",\"uart1\"")) { return false; }
+        return true;
+    }
     // turn on signal
     FruityHal::GpioPinSet(POWERKEY_PIN);
     FruityHal::DelayMs(WAKEUP_SIGNAL_TIME_MS);
@@ -156,9 +176,8 @@ bool AtCommandController::TurnOff(const u16& timeout) {
 
 bool AtCommandController::WaitForPSRegistration(const u32& timeout) {
     u32 prev = FruityHal::GetRtcMs();
-    auto CheckReturnCode = [](char* response) -> bool {
-        const char tokens[2] = {' ', ','};
-        const i32 commandArgsSize = GS->terminal.TokenizeLine(response, strlen(response), tokens, 2);
+    auto CheckReturnCode = [this](char* response) -> bool {
+        const i32 commandArgsSize = TokenizeResponse(response);
         if (commandArgsSize < 3) { return false; }
         const char* commandArgsPtr = GS->terminal.getCommandArgsPtr()[2];  // check second return Code
         bool didError = false;
@@ -196,6 +215,14 @@ bool AtCommandController::Activate(const char* accessPointName, const char* user
     return true;
 }
 
+bool AtCommandController::CheckValidConnectId(const u8& _connectId) const {
+    if (_connectId >= CONNECT_ID_NUM) {
+        GS->terminal.SeggerRttPutString("There is no available connect IDs");
+        return false;
+    }
+    return true;
+}
+
 bool AtCommandController::SocketOpen(const char* host, const u16& port, const SocketType& socketType) {
     if (host == NULL || host == nullptr || strlen(host) == 0) { return false; }
     if (!SendAtCommandAndCheck("AT+QISTATE", CONNECTION_WAIT_MS, "OK|+QISTATE")) { return false; }
@@ -203,7 +230,7 @@ bool AtCommandController::SocketOpen(const char* host, const u16& port, const So
     const char tokens[] = {' ', ','};
     bool didError;
     while (strncmp(response, "OK", 2) != 0) {
-        if (GS->terminal.TokenizeLine(response, strlen(response), tokens, 2) < 2) { return false; }
+        if (TokenizeResponse(response) < 2) { return false; }
         didError = false;
         i8 connectId = Utility::StringToI8(GS->terminal.getCommandArgsPtr()[1], &didError);
         if (didError || connectId < 0 || CONNECT_ID_NUM <= connectId) { return false; }
@@ -215,10 +242,7 @@ bool AtCommandController::SocketOpen(const char* host, const u16& port, const So
         connectId = _connectId;
         if (!connectIds[_connectId]) { break; }
     }
-    if (connectId >= CONNECT_ID_NUM) {
-        GS->terminal.SeggerRttPutString("There is no available connect IDs");
-        return false;
-    }
+    if (!CheckValidConnectId(connectId)) { return false; }
     char command[256];
     snprintf(command, 256, "AT+QIOPEN=1,%d,\"%s\",\"%s\",%d", connectId, socketType == SOCKET_TCP ? "TCP" : "UDP", host,
              port);
@@ -226,5 +250,61 @@ bool AtCommandController::SocketOpen(const char* host, const u16& port, const So
     if (!ReadResponseAndCheck(ATCOMMAND_TIMEOUT_MS, "+QIOPEN", DEFAULT_ERROR, true, nullptr, connectId, 0)) {
         return false;
     }
+    return true;
+}
+
+bool AtCommandController::SocketClose(const u8& _connectId) {
+    if (!CheckValidConnectId(_connectId)) { return false; }
+    char command[16];
+    snprintf(command, 16, "AT+CLOSE=%d", _connectId);
+    if (!SendAtCommandAndCheck(command, CONNECTION_WAIT_MS)) { return false; };
+    connectIds[_connectId] = false;
+    return true;
+}
+
+i32 AtCommandController::SocketReceive(const u8& _connectId, u8* data, const u16& dataSize) {
+    if (!CheckValidConnectId(_connectId)) { return false; }
+    char command[16];
+    snprintf(command, 16, "AT+QIRD=%d", _connectId);
+    if (!SendAtCommandAndCheck(command, 500, "+QIRD")) { return -1; }
+    char* response = GS->terminal.getReadBuffer();
+    i32 argSize = TokenizeResponse(response);
+    if (argSize < 2) { return -1; }
+    bool didError = false;
+    const u16 dataLen = Utility::StringToI16(GS->terminal.getCommandArgsPtr()[1], &didError);
+    if (dataSize < dataLen) { return -1; }
+    if (didError) { return -1; }
+    // nothing read
+    if (dataLen == 0) {
+        if (!ReadResponseOK()) { return -1; };
+        return 0;
+    }
+    // CheckedMemcpy(receiveBuffer, )
+    if (!ReadResponseOK()) { return -1; }
+    return dataLen;
+}
+
+i32 AtCommandController::SocketReceive(const u8& _connectId, u8* data, const u16& dataSize, const u16& timeout) {
+    if (!CheckValidConnectId(_connectId)) { return false; }
+    u32 prev = FruityHal::GetRtcMs();
+    i32 receiveLen = 0;
+    while (FruityHal::GetRtcMs() - prev < timeout) {
+        receiveLen = SocketReceive(connectId, NULL, 1024);
+        if (receiveLen == -1) { return -1; }
+        if (receiveLen > 0) { return receiveLen; }
+        FruityHal::DelayMs(100);
+    }
+    GS->terminal.SeggerRttPutString("socket read timeout");
+    return -1;
+}
+
+i32 AtCommandController::SocketSend(const u8& _connectId, const u8* data, const u16& dataSize) {
+    if (!CheckValidConnectId(_connectId)) { return false; }
+    char command[256];
+    snprintf(command, 256, "AT+QISEND=%d,%d", connectId, dataSize);
+    if (!SendAtCommandAndCheck(command, ATCOMMAND_TIMEOUT_MS, "> ", DEFAULT_ERROR, false)) { return false; }
+    FruityHal::UartPutStringBlockingWithTimeout(reinterpret_cast<const char*>(data));
+    if (!ReadResponseAndCheck(CONNECTION_WAIT_MS, "SEND OK")) { return false; }
+    if (!ReadResponseAndCheck(CONNECTION_WAIT_MS, "+QIURC")) { return false; }
     return true;
 }
