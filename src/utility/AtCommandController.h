@@ -38,7 +38,7 @@ class AtCommandController {
     u8 connectId;
 
     // receive buffer
-    u8 receiveBuffer[1024];
+    u8 receiveBuffer[2048];
 
    public:
     enum SocketType { SOCKET_TCP = 0, SOCKET_UDP };

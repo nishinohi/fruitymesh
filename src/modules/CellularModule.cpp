@@ -90,7 +90,7 @@ void CellularModule::SendFiredNodeIdListByCellular(const NodeId* nodeIdList, con
 
 #if IS_ACTIVE(BUTTONS)
 void CellularModule::ButtonHandler(u8 buttonId, u32 holdTime) {
-    GS->terminal.SeggerRttPutString("button lte");
+    GS->terminal.SeggerRttPutString("button lte\n");
     NodeId nodeIdList[] = {0, 1, 2, 3};
     SendFiredNodeIdListByCellular(nodeIdList, sizeof(nodeIdList) / sizeof(NodeId));
 }

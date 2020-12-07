@@ -279,7 +279,12 @@ i32 AtCommandController::SocketReceive(const u8& _connectId, u8* data, const u16
         if (!ReadResponseOK()) { return -1; };
         return 0;
     }
-    // CheckedMemcpy(receiveBuffer, )
+    u32 prev = FruityHal::GetRtcMs();
+    while (FruityHal::GetRtcMs() - prev < 1000) {
+        if (ReadLine()) { break; }
+    }
+    // copy contain \0
+    CheckedMemcpy(receiveBuffer, response, strlen(response) + 1);
     if (!ReadResponseOK()) { return -1; }
     return dataLen;
 }
@@ -289,8 +294,18 @@ i32 AtCommandController::SocketReceive(const u8& _connectId, u8* data, const u16
     u32 prev = FruityHal::GetRtcMs();
     i32 receiveLen = 0;
     while (FruityHal::GetRtcMs() - prev < timeout) {
-        receiveLen = SocketReceive(connectId, NULL, 1024);
+        receiveLen = SocketReceive(connectId, NULL, 2048);
         if (receiveLen == -1) { return -1; }
+        // receive return code
+        if (receiveLen == 3) {
+            bool didError = false;
+            const u16 returnCode = Utility::StringToU16(reinterpret_cast<const char*>(receiveBuffer), &didError);
+            if (didError) { return receiveLen; }
+            if (returnCode < 200 || returnCode > 299) { return receiveLen; }
+            // there is available data
+            FruityHal::DelayMs(100);
+            continue;
+        }
         if (receiveLen > 0) { return receiveLen; }
         FruityHal::DelayMs(100);
     }
