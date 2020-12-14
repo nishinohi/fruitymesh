@@ -32,13 +32,9 @@ class AtCommandController {
                                FruityHal::TimerHandler timeoutCallback = nullptr, T... returnCodes);
 
     bool WaitForPSRegistration(const u32& timeout = 120000);
-    bool CheckValidConnectId(const u8& _connectId) const;
+    bool CheckValidConnectId(const i8& _connectId) const { return _connectId >= 0 && _connectId < CONNECT_ID_NUM; }
     // Socket Open
     bool connectIds[CONNECT_ID_NUM];
-    u8 connectId;
-
-    // receive buffer
-    u8 receiveBuffer[2048];
 
    public:
     enum SocketType { SOCKET_TCP = 0, SOCKET_UDP };
@@ -51,10 +47,9 @@ class AtCommandController {
     bool Activate(const char* accessPointName = SORACOM_APN, const char* userName = SORACOM_USERNAME,
                   const char* password = SORACOM_PASSWORD, const u32& timeout = 120000);
     bool Deactivate() { return SendAtCommandAndCheck("AT+QIDEACT", 10000); }
-    bool SocketOpen(const char* host, const u16& port, const SocketType& socketType);
-    u8 GetConnectId() const { return connectId; }
-    bool SocketClose(const u8& _connectId);
-    i32 SocketReceive(const u8& _connectId, u8* data, const u16& dataSize);
-    i32 SocketReceive(const u8& _connectId, u8* data, const u16& dataSize, const u16& timeout);
-    i32 SocketSend(const u8& _connectId, const u8* data, const u16& dataSize);
+    i8 SocketOpen(const char* host, const u16& port, const SocketType& socketType);
+    bool SocketClose(const i8& _connectId);
+    i32 SocketReceive(const i8& _connectId, u8* data, const u16& dataSize);
+    i32 SocketReceive(const i8& _connectId, u8* data, const u16& dataSize, const u16& timeout);
+    bool SocketSend(const i8& _connectId, const u8* data, const u16& dataSize);
 };

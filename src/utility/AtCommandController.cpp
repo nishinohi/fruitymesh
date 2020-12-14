@@ -207,7 +207,7 @@ bool AtCommandController::Activate(const char* accessPointName, const char* user
         if (!SendAtCommandAndCheck(command)) { return false; }
         if (!WaitForPSRegistration(CONNECTION_WAIT_MS)) { return false; }
     }
-    if (!SendAtCommandAndCheck("AT+QIACT=1", 15000)) { return false; }
+    if (!SendAtCommandAndCheck("AT+QIACT=1", 15000, "OK|ERROR", "NON")) { return false; }
     if (!SendAtCommandAndCheck("AT+QIGETERROR", ATCOMMAND_TIMEOUT_MS, "+QIGETERROR", DEFAULT_ERROR, true, nullptr, 0)) {
         return false;
     }
@@ -215,45 +215,38 @@ bool AtCommandController::Activate(const char* accessPointName, const char* user
     return true;
 }
 
-bool AtCommandController::CheckValidConnectId(const u8& _connectId) const {
-    if (_connectId >= CONNECT_ID_NUM) {
-        GS->terminal.SeggerRttPutString("There is no available connect IDs");
-        return false;
-    }
-    return true;
-}
-
-bool AtCommandController::SocketOpen(const char* host, const u16& port, const SocketType& socketType) {
-    if (host == NULL || host == nullptr || strlen(host) == 0) { return false; }
-    if (!SendAtCommandAndCheck("AT+QISTATE", CONNECTION_WAIT_MS, "OK|+QISTATE")) { return false; }
+i8 AtCommandController::SocketOpen(const char* host, const u16& port, const SocketType& socketType) {
+    if (host == NULL || host == nullptr || strlen(host) == 0) { return -1; }
+    if (!SendAtCommandAndCheck("AT+QISTATE", CONNECTION_WAIT_MS, "OK|+QISTATE")) { return -1; }
     char* response = GS->terminal.getReadBuffer();
     const char tokens[] = {' ', ','};
     bool didError;
     while (strncmp(response, "OK", 2) != 0) {
-        if (TokenizeResponse(response) < 2) { return false; }
+        if (TokenizeResponse(response) < 2) { return -1; }
         didError = false;
         i8 connectId = Utility::StringToI8(GS->terminal.getCommandArgsPtr()[1], &didError);
-        if (didError || connectId < 0 || CONNECT_ID_NUM <= connectId) { return false; }
+        if (didError || connectId < 0 || CONNECT_ID_NUM <= connectId) { return -1; }
         connectIds[connectId] = true;
-        if (!ReadResponseAndCheck(CONNECTION_WAIT_MS, "OK|+QISTATE")) { return false; }
+        if (!ReadResponseAndCheck(CONNECTION_WAIT_MS, "OK|+QISTATE")) { return -1; }
     }
     // check available connectId
-    for (u8 _connectId = 0; connectId < CONNECT_ID_NUM; ++_connectId) {
+    i8 connectId = -1;
+    for (i8 _connectId = 0; _connectId < CONNECT_ID_NUM; ++_connectId) {
         connectId = _connectId;
         if (!connectIds[_connectId]) { break; }
     }
-    if (!CheckValidConnectId(connectId)) { return false; }
+    if (!CheckValidConnectId(connectId)) { return -1; }
     char command[256];
     snprintf(command, 256, "AT+QIOPEN=1,%d,\"%s\",\"%s\",%d", connectId, socketType == SOCKET_TCP ? "TCP" : "UDP", host,
              port);
-    if (!SendAtCommandAndCheck(command, CONNECTION_WAIT_MS, "OK")) { return false; }
+    if (!SendAtCommandAndCheck(command, CONNECTION_WAIT_MS, "OK")) { return -1; }
     if (!ReadResponseAndCheck(ATCOMMAND_TIMEOUT_MS, "+QIOPEN", DEFAULT_ERROR, true, nullptr, connectId, 0)) {
-        return false;
+        return -1;
     }
-    return true;
+    return connectId;
 }
 
-bool AtCommandController::SocketClose(const u8& _connectId) {
+bool AtCommandController::SocketClose(const i8& _connectId) {
     if (!CheckValidConnectId(_connectId)) { return false; }
     char command[16];
     snprintf(command, 16, "AT+CLOSE=%d", _connectId);
@@ -262,7 +255,7 @@ bool AtCommandController::SocketClose(const u8& _connectId) {
     return true;
 }
 
-i32 AtCommandController::SocketReceive(const u8& _connectId, u8* data, const u16& dataSize) {
+i32 AtCommandController::SocketReceive(const i8& _connectId, u8* data, const u16& dataSize) {
     if (!CheckValidConnectId(_connectId)) { return false; }
     char command[16];
     snprintf(command, 16, "AT+QIRD=%d", _connectId);
@@ -284,22 +277,22 @@ i32 AtCommandController::SocketReceive(const u8& _connectId, u8* data, const u16
         if (ReadLine()) { break; }
     }
     // copy contain \0
-    CheckedMemcpy(receiveBuffer, response, strlen(response) + 1);
+    CheckedMemcpy(data, response, strlen(response) + 1);
     if (!ReadResponseOK()) { return -1; }
     return dataLen;
 }
 
-i32 AtCommandController::SocketReceive(const u8& _connectId, u8* data, const u16& dataSize, const u16& timeout) {
+i32 AtCommandController::SocketReceive(const i8& _connectId, u8* data, const u16& dataSize, const u16& timeout) {
     if (!CheckValidConnectId(_connectId)) { return false; }
     u32 prev = FruityHal::GetRtcMs();
     i32 receiveLen = 0;
     while (FruityHal::GetRtcMs() - prev < timeout) {
-        receiveLen = SocketReceive(connectId, NULL, 2048);
+        receiveLen = SocketReceive(_connectId, NULL, 2048);
         if (receiveLen == -1) { return -1; }
         // receive return code
         if (receiveLen == 3) {
             bool didError = false;
-            const u16 returnCode = Utility::StringToU16(reinterpret_cast<const char*>(receiveBuffer), &didError);
+            const u16 returnCode = Utility::StringToU16(reinterpret_cast<const char*>(data), &didError);
             if (didError) { return receiveLen; }
             if (returnCode < 200 || returnCode > 299) { return receiveLen; }
             // there is available data
@@ -313,12 +306,18 @@ i32 AtCommandController::SocketReceive(const u8& _connectId, u8* data, const u16
     return -1;
 }
 
-i32 AtCommandController::SocketSend(const u8& _connectId, const u8* data, const u16& dataSize) {
+bool AtCommandController::SocketSend(const i8& _connectId, const u8* data, const u16& dataSize) {
     if (!CheckValidConnectId(_connectId)) { return false; }
     char command[256];
-    snprintf(command, 256, "AT+QISEND=%d,%d", connectId, dataSize);
+    snprintf(command, 256, "AT+QISEND=%d,%d", _connectId, dataSize);
     if (!SendAtCommandAndCheck(command, ATCOMMAND_TIMEOUT_MS, "> ", DEFAULT_ERROR, false)) { return false; }
-    FruityHal::UartPutStringBlockingWithTimeout(reinterpret_cast<const char*>(data));
+    u16 ii = 0;
+    while (ii < dataSize) {
+        GS->terminal.SeggerRttPutChar(data[ii]);
+        ++ii;
+    }
+    GS->terminal.SeggerRttPutString("\n");
+    FruityHal::UartPutDataBlockingWithTimeout(data, dataSize);
     if (!ReadResponseAndCheck(CONNECTION_WAIT_MS, "SEND OK")) { return false; }
     if (!ReadResponseAndCheck(CONNECTION_WAIT_MS, "+QIURC")) { return false; }
     return true;
