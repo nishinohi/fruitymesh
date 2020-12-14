@@ -33,7 +33,11 @@
 #include <Module.h>
 #include <PacketQueue.h>
 
+#include <queue>
+
 #include "AtCommandController.h"
+#include "EcTwoOneModuleClient.h"
+#include "PubSubClient.h"
 
 #define NODE_ID_LIST_NUM 40
 
@@ -54,9 +58,10 @@ class CellularModule : public Module {
     enum CellularModuleActionResponseMessages { MESSAGE_0_RESPONSE = 0 };
 
     NodeId nodeIdList[NODE_ID_LIST_NUM];
-    // char sendBuffer[1024];
 
     AtCommandController atComCtl;
+    EcTwoOneModuleClient ecTwoOneClient;
+    PubSubClient pubSubClient;
 
     CellularModuleConfiguration configuration;
 

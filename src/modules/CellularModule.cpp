@@ -43,7 +43,8 @@
 
 constexpr u8 CELLULAR_MODULE_CONFIG_VERSION = 1;
 
-CellularModule::CellularModule() : Module(ModuleId::CELLULAR_MODULE, "cellular"), atComCtl() {
+CellularModule::CellularModule()
+    : Module(ModuleId::CELLULAR_MODULE, "cellular"), atComCtl(), ecTwoOneClient(&atComCtl) {
     // Register callbacks n' stuff
 
     // Save configuration to base class variables
@@ -61,6 +62,8 @@ void CellularModule::ResetToDefaultConfiguration() {
     configuration.moduleVersion = CELLULAR_MODULE_CONFIG_VERSION;
     FruityHal::EnableUart(true);
     // Set additional config values...
+    pubSubClient.setClient(ecTwoOneClient);
+    pubSubClient.setServer("beam.soracom.io", 1883);
 }
 
 void CellularModule::ConfigurationLoadedHandler(ModuleConfiguration* migratableConfig, u16 migratableConfigLength) {
@@ -78,14 +81,30 @@ void CellularModule::TimerEventHandler(u16 passedTimeDs) {
 }
 
 void CellularModule::SendFiredNodeIdListByCellular(const NodeId* nodeIdList, const size_t& listLen) {
-    //     if (!TurnOn()) { return; }
-    //     if (!SimActivate()) { return; }
+    char data[] = "{\"t\0ime\":10}";
     if (!atComCtl.TurnOnOrReset()) { return; }
     if (!atComCtl.Activate()) { return; }
-    if (!atComCtl.SocketOpen("harvest.soracom.io", 8514, AtCommandController::SocketType::SOCKET_UDP)) { return; }
-    char data[] = "{\"time\":10}";
-    if (!atComCtl.SocketSend(atComCtl.GetConnectId(), reinterpret_cast<const u8*>(data), strlen(data))) { return; };
-    if (atComCtl.SocketReceive(atComCtl.GetConnectId(), NULL, 10, 10000) == -1) { return; }
+
+    if (!pubSubClient.connect("testId")) {
+        GS->terminal.SeggerRttPutString("connect fail");
+        return;
+    }
+    if (pubSubClient.publish("beamdemo", "Hello ec21")) {
+        GS->terminal.SeggerRttPutString("send fail");
+        pubSubClient.disconnect();
+        return;
+    }
+
+    pubSubClient.disconnect();
+
+    // i8 connectId = atComCtl.SocketOpen("harvest.soracom.io", 8514, AtCommandController::SocketType::SOCKET_UDP);
+    // if (connectId == -1) { return; }
+    // if (!atComCtl.SocketSend(connectId, reinterpret_cast<const u8*>(data), 12)) { return; };
+    // u8 temp[1024];
+    // if (atComCtl.SocketReceive(connectId, temp, 10, 10000) == -1) { return; }
+
+    // if (!atComCtl.SocketClose()) { return; }
+    // if (!atComCtl.Deactivate()) { return; }
 }
 
 #if IS_ACTIVE(BUTTONS)
