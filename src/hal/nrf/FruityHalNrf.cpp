@@ -2929,6 +2929,29 @@ FruityHal::UartReadCharBlockingResult FruityHal::UartReadCharBlocking()
     return retVal;
 }
 
+void FruityHal::UartPutDataBlockingWithTimeout(const u8* data, const u16& len) {
+    uint_fast8_t i = 0;
+    uint8_t byte = data[i++];
+
+    while (i <= len)
+    {
+        NRF_UART0->TXD = byte;
+        byte = data[i++];
+
+        int i = 0;
+        while (NRF_UART0->EVENTS_TXDRDY != 1) {
+            //Timeout if it was not possible to put the character
+            if (i > 10000) {
+                return;
+            }
+            i++;
+            //FIXME: Do we need error handling here? Will cause lost characters
+        }
+        NRF_UART0->EVENTS_TXDRDY = 0;
+    }
+ }
+
+
 void FruityHal::UartPutStringBlockingWithTimeout(const char* message)
 {
     uint_fast8_t i = 0;
