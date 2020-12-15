@@ -344,7 +344,7 @@ void Terminal::CheckAndProcessLine()
     if(!terminalIsInitialized) return;
 
 #if IS_ACTIVE(UART)
-    UartCheckAndProcessLine();
+    // UartCheckAndProcessLine();
 #endif
 #if IS_ACTIVE(SEGGER_RTT)
     SeggerRttCheckAndProcessLine();
