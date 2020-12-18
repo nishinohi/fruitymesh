@@ -28,19 +28,21 @@
 // ****************************************************************************/
 ////////////////////////////////////////////////////////////////////////////////
 
+#include <GlobalState.h>
 #include <Logger.h>
 #include <MatageekModule.h>
 #include <Node.h>
 #include <Utility.h>
 
-constexpr u8 MATAGEEK_MODULE_CONFIG_VERSION = 1;
-
-MatageekModule::MatageekModule() : Module(ModuleId::MATAGEEK_MODULE, "matageek") {
+MatageekModule::MatageekModule() : Module(MATAGEEK_MODULE_ID, "template") {
     // Register callbacks n' stuff
+
+    // Enable the logtag for our vendor module template
+    GS->logger.EnableTag("MATAMOD");
 
     // Save configuration to base class variables
     // sizeof configuration must be a multiple of 4 bytes
-    configurationPointer = &configuration;
+    vendorConfigurationPointer = &configuration;
     configurationLength = sizeof(MatageekModuleConfiguration);
 
     // Set defaults
@@ -49,16 +51,21 @@ MatageekModule::MatageekModule() : Module(ModuleId::MATAGEEK_MODULE, "matageek")
 
 void MatageekModule::ResetToDefaultConfiguration() {
     // Set default configuration values
-    configuration.moduleId = moduleId;
+    configuration.moduleId = vendorModuleId;
     configuration.moduleActive = true;
     configuration.moduleVersion = MATAGEEK_MODULE_CONFIG_VERSION;
 
     // Set additional config values...
+
+    // This line allows us to have different configurations of this module depending on the featureset
+    SET_FEATURESET_CONFIGURATION_VENDOR(&configuration, this);
 }
 
-void MatageekModule::ConfigurationLoadedHandler(ModuleConfiguration* migratableConfig, u16 migratableConfigLength) {
+void MatageekModule::ConfigurationLoadedHandler(u8* migratableConfig, u16 migratableConfigLength) {
+    VendorModuleConfiguration* newConfig = (VendorModuleConfiguration*)migratableConfig;
+
     // Version migration can be added here, e.g. if module has version 2 and config is version 1
-    if (migratableConfig->moduleVersion == 1) { /* ... */
+    if (newConfig != nullptr && newConfig->moduleVersion == 1) { /* ... */
     };
 
     // Do additional initialization upon loading the config
@@ -72,29 +79,41 @@ void MatageekModule::TimerEventHandler(u16 passedTimeDs) {
 
 #ifdef TERMINAL_ENABLED
 TerminalCommandHandlerReturnType MatageekModule::TerminalCommandHandler(const char* commandArgs[], u8 commandArgsSize) {
-    // Get the id of the target node
+    // React on commands, return true if handled, false otherwise
     if (TERMARGS(0, "matamod")) {
         NodeId targetNodeId = Utility::StringToI16(commandArgs[1]);
         logt("MATAMOD", "Trying to ping node %u", targetNodeId);
 
-        // some data
-        u8 data[1];
-        data[0] = 123;
-
+        u8 data[1] = {123};
         SendModuleActionMessage(MessageType::MODULE_TRIGGER_ACTION, targetNodeId,
                                 MatageekModuleTriggerActionMessages::TRIGGER_PING, 0, data, 1, false);
 
         return TerminalCommandHandlerReturnType::SUCCESS;
     }
 
-    // React on commands, return true if handled, false otherwise
     if (commandArgsSize >= 3 && TERMARGS(2, moduleName)) {
         if (TERMARGS(0, "action")) {
             if (!TERMARGS(2, moduleName)) return TerminalCommandHandlerReturnType::UNKNOWN;
 
-            if (commandArgsSize >= 4 && TERMARGS(3, "argument_a")) {
+            if (commandArgsSize >= 5 && TERMARGS(3, "one")) {
+                logt("MATAMOD", "Command one executed");
+
+                MatageekModuleCommandOneMessage data;
+                data.exampleValue = Utility::StringToU8(commandArgs[4]);
+
+                // PART 1 of sending a message: Some command is entered and a request message is sent
+                SendModuleActionMessage(MessageType::MODULE_TRIGGER_ACTION, NODE_ID_BROADCAST,
+                                        (u8)MatageekModuleTriggerActionMessages::COMMAND_ONE_MESSAGE, 0, (u8*)&data,
+                                        SIZEOF_MATAGEEK_MODULE_COMMAND_ONE_MESSAGE, true);
+
                 return TerminalCommandHandlerReturnType::SUCCESS;
-            } else if (commandArgsSize >= 4 && TERMARGS(3, "argument_b")) {
+            } else if (commandArgsSize >= 4 && TERMARGS(3, "two")) {
+                logt("MATAMOD", "Command two executed");
+
+                SendModuleActionMessage(MessageType::MODULE_TRIGGER_ACTION, NODE_ID_BROADCAST,
+                                        (u8)MatageekModuleTriggerActionMessages::COMMAND_TWO_MESSAGE, 0, nullptr, 0,
+                                        true, true);
+
                 return TerminalCommandHandlerReturnType::SUCCESS;
             }
 
@@ -108,40 +127,47 @@ TerminalCommandHandlerReturnType MatageekModule::TerminalCommandHandler(const ch
 #endif
 
 void MatageekModule::MeshMessageReceivedHandler(BaseConnection* connection, BaseConnectionSendData* sendData,
-                                                connPacketHeader const* packetHeader) {
+                                                ConnPacketHeader const* packetHeader) {
     // Must call superclass for handling
     Module::MeshMessageReceivedHandler(connection, sendData, packetHeader);
 
-    // Filter trigger action message
-    if (packetHeader->messageType == MessageType::MODULE_TRIGGER_ACTION) {
-        connPacketModule const* packet = (connPacketModule const*)packetHeader;
+    if (packetHeader->messageType == MessageType::MODULE_TRIGGER_ACTION &&
+        sendData->dataLength >= SIZEOF_CONN_PACKET_MODULE_VENDOR) {
+        ConnPacketModuleVendor const* packet = (ConnPacketModuleVendor const*)packetHeader;
 
         // Check if our module is meant and we should trigger an action
-        if (packet->moduleId == moduleId) {
-            if (packet->actionType == MatageekModuleTriggerActionMessages::TRIGGER_PING) {
-                // inform the uer
+        if (packet->moduleId == vendorModuleId) {
+            if (packet->actionType == MatageekModule::MatageekModuleTriggerActionMessages::TRIGGER_PING) {
                 logt("MATAMOD", "Ping request received with data: %d", packet->data[0]);
 
-                u8 data[2];
-                data[0] = packet->data[0];
-                data[1] = 111;
+                u8 data[2] = {packet->data[0], 111};
+                SendModuleActionMessage(MessageType::MODULE_ACTION_RESPONSE, packet->header.sender,
+                                        MatageekModuleActionResponseMessages::TRIGGER_PING_RESPONSE, 0, data, 2, false);
+            }
 
-                SendModuleActionMessage(MessageType::MODULE_ACTION_RESPONSE, packetHeader->sender,
-                                        MatageekModuleActionResponseMessages::PING_RESPONSE, 0, data, 2, false);
+            if (packet->actionType == MatageekModuleTriggerActionMessages::COMMAND_ONE_MESSAGE) {
+                const MatageekModuleCommandOneMessage* data = (const MatageekModuleCommandOneMessage*)packet->data;
+
+                logt("MATAMOD", "Got command one message with %u", data->exampleValue);
+            } else if (packet->actionType == MatageekModuleTriggerActionMessages::COMMAND_TWO_MESSAGE) {
+                logt("MATAMOD", "Got command two message");
             }
         }
     }
 
     // Parse Module responses
-    if (packetHeader->messageType == MessageType::MODULE_ACTION_RESPONSE) {
-        connPacketModule const* packet = (connPacketModule const*)packetHeader;
+    if (packetHeader->messageType == MessageType::MODULE_ACTION_RESPONSE &&
+        sendData->dataLength >= SIZEOF_CONN_PACKET_MODULE_VENDOR) {
+        ConnPacketModuleVendor const* packet = (ConnPacketModuleVendor const*)packetHeader;
 
         // Check if our module is meant and we should trigger an action
-        if (packet->moduleId == moduleId) {
-            if (packet->actionType == MatageekModuleActionResponseMessages::PING_RESPONSE) {
+        if (packet->moduleId == vendorModuleId) {
+            if (packet->actionType == MatageekModuleActionResponseMessages::TRIGGER_PING_RESPONSE) {
                 logt("MATAMOD", "Ping came back from %u with data %d, %d", packet->header.sender, packet->data[0],
                      packet->data[1]);
             }
+
+            if (packet->actionType == MatageekModuleActionResponseMessages::COMMAND_ONE_MESSAGE_RESPONSE) {}
         }
     }
 }

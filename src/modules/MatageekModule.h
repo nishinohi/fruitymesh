@@ -36,46 +36,63 @@
  * This is a template for a FruityMesh module.
  * A comment should be here to provide a least a short description of its purpose.
  */
+
+// This should be set to the correct vendor and subId
+constexpr VendorModuleId MATAGEEK_MODULE_ID = GET_VENDOR_MODULE_ID(0xABCD, 1);
+
+constexpr u8 MATAGEEK_MODULE_CONFIG_VERSION = 1;
+
+#pragma pack(push)
+#pragma pack(1)
+// Module configuration that is saved persistently (size must be multiple of 4)
+struct MatageekModuleConfiguration : VendorModuleConfiguration {
+    // Insert more persistent config values here
+    u8 exampleValue;
+};
+#pragma pack(pop)
+
 class MatageekModule : public Module {
-   private:
-    // Module configuration that is saved persistently (size must be multiple of 4)
-    struct MatageekModuleConfiguration : ModuleConfiguration {
-        // Insert more persistent config values here
+   public:
+    enum MatageekModuleTriggerActionMessages {
+        COMMAND_ONE_MESSAGE = 0,
+        COMMAND_TWO_MESSAGE = 1,
+        TRIGGER_PING = 2,
     };
 
-    MatageekModuleConfiguration configuration;
+    enum MatageekModuleActionResponseMessages {
+        COMMAND_ONE_MESSAGE_RESPONSE = 0,
+        COMMAND_TWO_MESSAGE_RESPONSE = 1,
+        TRIGGER_PING_RESPONSE = 2,
+    };
 
-    enum MatageekModuleTriggerActionMessages { TRIGGER_PING = 0 };
-
-    enum MatageekModuleActionResponseMessages { PING_RESPONSE = 0 };
-
-    /*
     //####### Module messages (these need to be packed)
-    #pragma pack(push)
-    #pragma pack(1)
+#pragma pack(push)
+#pragma pack(1)
 
-        #define SIZEOF_TEMPLATE_MODULE_***_MESSAGE 10
-        typedef struct
-        {
-            //Insert values here
+    static constexpr int SIZEOF_MATAGEEK_MODULE_COMMAND_ONE_MESSAGE = 1;
+    typedef struct {
+        // Insert values here
+        u8 exampleValue;
 
-        }MatageekModule***Message;
+    } MatageekModuleCommandOneMessage;
+    STATIC_ASSERT_SIZE(MatageekModuleCommandOneMessage, SIZEOF_MATAGEEK_MODULE_COMMAND_ONE_MESSAGE);
 
-    #pragma pack(pop)
+#pragma pack(pop)
     //####### Module messages end
-    */
 
-   public:
+    // Declare the configuration used for this module
+    DECLARE_CONFIG_AND_PACKED_STRUCT(MatageekModuleConfiguration);
+
     MatageekModule();
 
-    void ConfigurationLoadedHandler(ModuleConfiguration* migratableConfig, u16 migratableConfigLength) override;
+    void ConfigurationLoadedHandler(u8* migratableConfig, u16 migratableConfigLength) override;
 
     void ResetToDefaultConfiguration() override;
 
     void TimerEventHandler(u16 passedTimeDs) override;
 
     void MeshMessageReceivedHandler(BaseConnection* connection, BaseConnectionSendData* sendData,
-                                    connPacketHeader const* packetHeader) override;
+                                    ConnPacketHeader const* packetHeader) override;
 
 #ifdef TERMINAL_ENABLED
     TerminalCommandHandlerReturnType TerminalCommandHandler(const char* commandArgs[], u8 commandArgsSize) override;
