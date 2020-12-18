@@ -166,6 +166,7 @@ enum class ModuleId : u8 {
     PING_MODULE = 201,
     TEMPLATE_MODULE = 202,
     SIG_EXAMPLE_MODULE = 203,
+    MATAGEEK_MODULE = 204,
 
     //Invalid Module: 0xFF is the flash memory default and is therefore invalid
     INVALID_MODULE = 255,
