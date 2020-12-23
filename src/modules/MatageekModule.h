@@ -62,14 +62,13 @@ class MatageekModule : public Module {
    public:
     enum MatageekModuleTriggerActionMessages {
         TRAP_STATE = 0,
-        MODE_CHANGE = 1,
-        BATTERY_DEAD = 2,
+        TRAP_FIRE,
+        MODE_CHANGE,
+        BATTERY_DEAD,
     };
 
     enum MatageekModuleActionResponseMessages {
         TRAP_STATE_RESPONSE = 0,
-        MODE_CHANGE_RESPONSE = 1,
-        BATTERY_DEAD_RESPONSE = 2,
     };
 
     //####### Module messages (these need to be packed)
@@ -110,7 +109,7 @@ class MatageekModule : public Module {
     // true: trap fired, false: trap not fired
     bool GetTrapState() const { return true; }  // not implmented
     void ChangeMatageekMode(const MatageekMode& newMode);
-    ErrorTypeUnchecked SendTrapStateMessage(const NodeId& targetNodeId) const;
+    ErrorTypeUnchecked SendTrapStateMessageResponse(const NodeId& targetNodeId) const;
     // true: available, false: dead
     bool CheckBattery() const { return true; }  // not implemented
     ErrorTypeUnchecked SendBatteryDeadMessage(const NodeId& targetNodeId) const;

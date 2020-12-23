@@ -127,7 +127,7 @@ void MatageekModule::MeshMessageReceivedHandler(BaseConnection* connection, Base
             switch (packet->actionType) {
                 case MatageekModule::MatageekModuleTriggerActionMessages::TRAP_STATE:
                     logt(MATAGEEK_LOG_TAG, "trap request received");
-                    SendTrapStateMessage(packet->header.sender);
+                    SendTrapStateMessageResponse(packet->header.sender);
                     break;
                 case MatageekModule::MatageekModuleTriggerActionMessages::MODE_CHANGE:
                     logt(MATAGEEK_LOG_TAG, "change mode received %u, %u", packet->header.sender, packet->data[0]);
@@ -158,7 +158,7 @@ void MatageekModule::MeshMessageReceivedHandler(BaseConnection* connection, Base
     }
 }
 
-ErrorTypeUnchecked MatageekModule::SendTrapStateMessage(const NodeId& targetNodeId) const {
+ErrorTypeUnchecked MatageekModule::SendTrapStateMessageResponse(const NodeId& targetNodeId) const {
     const u8 trapState[1] = {GetTrapState() ? (u8)1 : (u8)0};
     logt(MATAGEEK_LOG_TAG, "Trying to send trap state %u, %s", targetNodeId, trapState[0] == 0 ? "not fired" : "fired");
     return SendModuleActionMessage(MessageType::MODULE_ACTION_RESPONSE, targetNodeId,
