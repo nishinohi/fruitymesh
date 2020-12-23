@@ -124,13 +124,21 @@ void MatageekModule::MeshMessageReceivedHandler(BaseConnection* connection, Base
 
         // Check if our module is meant and we should trigger an action
         if (packet->moduleId == vendorModuleId) {
-            if (packet->actionType == MatageekModule::MatageekModuleTriggerActionMessages::TRAP_STATE) {
-                logt(MATAGEEK_LOG_TAG, "trap request received");
-                SendDetectMessage(packet->header.sender);
-            }
-            if (packet->actionType == MatageekModuleTriggerActionMessages::MODE_CHANGE) {
-                logt(MATAGEEK_LOG_TAG, "change mode received %u, %u", packet->header.sender, packet->data[0]);
-                ChangeMatageekMode(packet->data[0] == 0 ? MatageekMode::SETUP : MatageekMode::DETECT);
+            switch (packet->actionType) {
+                case MatageekModule::MatageekModuleTriggerActionMessages::TRAP_STATE:
+                    logt(MATAGEEK_LOG_TAG, "trap request received");
+                    SendTrapStateMessage(packet->header.sender);
+                    break;
+                case MatageekModule::MatageekModuleTriggerActionMessages::MODE_CHANGE:
+                    logt(MATAGEEK_LOG_TAG, "change mode received %u, %u", packet->header.sender, packet->data[0]);
+                    ChangeMatageekMode(packet->data[0] == 0 ? MatageekMode::SETUP : MatageekMode::DETECT);
+                    break;
+                case MatageekModule::MatageekModuleTriggerActionMessages::BATTERY_DEAD:
+                    logt(MATAGEEK_LOG_TAG, "battery dead received %u", packet->header.sender);
+                    // CommitBatteryDead(packet->header.sender);
+                    break;
+                default:
+                    break;
             }
         }
     }
@@ -150,11 +158,17 @@ void MatageekModule::MeshMessageReceivedHandler(BaseConnection* connection, Base
     }
 }
 
-ErrorTypeUnchecked MatageekModule::SendDetectMessage(const NodeId& sender) const {
+ErrorTypeUnchecked MatageekModule::SendTrapStateMessage(const NodeId& targetNodeId) const {
     const u8 trapState[1] = {GetTrapState() ? (u8)1 : (u8)0};
-    logt(MATAGEEK_LOG_TAG, "Trying to send trap state %u, %s", sender, trapState[0] == 0 ? "not fired" : "fired");
-    return SendModuleActionMessage(MessageType::MODULE_ACTION_RESPONSE, sender,
+    logt(MATAGEEK_LOG_TAG, "Trying to send trap state %u, %s", targetNodeId, trapState[0] == 0 ? "not fired" : "fired");
+    return SendModuleActionMessage(MessageType::MODULE_ACTION_RESPONSE, targetNodeId,
                                    MatageekModuleActionResponseMessages::TRAP_STATE_RESPONSE, 0, trapState, 1, false);
+}
+
+ErrorTypeUnchecked MatageekModule::SendBatteryDeadMessage(const NodeId& targetNodeId) const {
+    logt(MATAGEEK_LOG_TAG, "Trying to send battery dead %u", targetNodeId);
+    return SendModuleActionMessage(MessageType::MODULE_TRIGGER_ACTION, targetNodeId,
+                                   MatageekModuleTriggerActionMessages::BATTERY_DEAD, 0, nullptr, 0, false);
 }
 
 void MatageekModule::ChangeMatageekMode(const MatageekMode& newMode) {
