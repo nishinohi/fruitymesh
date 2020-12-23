@@ -58,7 +58,7 @@ void MatageekModule::ResetToDefaultConfiguration() {
     configuration.moduleVersion = MATAGEEK_MODULE_CONFIG_VERSION;
 
     // Set additional config values...
-    configuration.mode = MatageekMode::SETUP;
+    configuration.matageekMode = MatageekMode::SETUP;
     // This line allows us to have different configurations of this module depending on the featureset
     SET_FEATURESET_CONFIGURATION_VENDOR(&configuration, this);
 }
@@ -100,7 +100,7 @@ TerminalCommandHandlerReturnType MatageekModule::TerminalCommandHandler(const ch
             const u8 newMode[1] = {Utility::StringToU8(commandArgs[4], &didError)};
             if (didError) return TerminalCommandHandlerReturnType::WRONG_ARGUMENT;
             logt(MATAGEEK_LOG_TAG, "Trying to change state %u, %s", targetNodeId, newMode == 0 ? "SETUP" : "DETECT");
-            configuration.mode = newMode == 0 ? MatageekMode::SETUP : MatageekMode::DETECT;
+            configuration.matageekMode = newMode == 0 ? MatageekMode::SETUP : MatageekMode::DETECT;
             SendModuleActionMessage(MessageType::MODULE_TRIGGER_ACTION, targetNodeId,
                                     MatageekModuleTriggerActionMessages::MODE_CHANGE, 0, newMode, 1, false);
             return TerminalCommandHandlerReturnType::SUCCESS;
@@ -134,7 +134,7 @@ void MatageekModule::MeshMessageReceivedHandler(BaseConnection* connection, Base
                                         false);
             }
             if (packet->actionType == MatageekModuleTriggerActionMessages::MODE_CHANGE) {
-                configuration.mode = packet->data[0] == 0 ? MatageekMode::SETUP : MatageekMode::DETECT;
+                ChangeMatageekMode(packet->data[0] == 0 ? MatageekMode::SETUP : MatageekMode::DETECT);
                 logt(MATAGEEK_LOG_TAG, "change mode received %u, %s", packet->header.sender,
                      packet->data[0] == 0 ? "SETUP" : "DETECT");
             }
@@ -154,4 +154,24 @@ void MatageekModule::MeshMessageReceivedHandler(BaseConnection* connection, Base
             }
         }
     }
+}
+
+// not implemented
+bool MatageekModule::SendCurrentState(const bool& network, const bool& detect) { return true; }
+
+void MatageekModule::ChangeMatageekMode(const MatageekMode& newMode) {
+    // if same mode, do nothing. May be Reset highToLowDiscoveryTimeSec.
+    if (configuration.matageekMode == newMode) return;
+
+    Node* nodeModule = nullptr;
+    for (auto activateModule : GS->activeModules) {
+        if (activateModule->moduleId == ModuleId::NODE) {
+            nodeModule = reinterpret_cast<Node*>(activateModule);
+            break;
+        }
+    }
+    if (nodeModule == nullptr) return;
+
+    if (newMode == MatageekMode::SETUP) nodeModule->ChangeState(DiscoveryState::HIGH);
+    if (newMode == MatageekMode::DETECT) nodeModule->ChangeState(DiscoveryState::OFF);
 }

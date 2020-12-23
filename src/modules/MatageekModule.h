@@ -54,7 +54,7 @@ enum class MatageekMode {
 struct MatageekModuleConfiguration : VendorModuleConfiguration {
     // Insert more persistent config values here
     u8 exampleValue;
-    MatageekMode mode;
+    MatageekMode matageekMode;
 };
 #pragma pack(pop)
 
@@ -106,5 +106,7 @@ class MatageekModule : public Module {
     // only use for matageek
    private:
     // true: trap fired, false: trap not fired
-    bool GetTrapState() { return true; }  // not implmented
+    bool GetTrapState() { return true; }                             // not implmented
+    bool SendCurrentState(const bool& network, const bool& detect);  // not implmented
+    void ChangeMatageekMode(const MatageekMode& newMode);
 };
