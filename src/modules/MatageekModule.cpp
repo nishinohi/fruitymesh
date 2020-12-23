@@ -99,8 +99,8 @@ TerminalCommandHandlerReturnType MatageekModule::TerminalCommandHandler(const ch
             if (didError) return TerminalCommandHandlerReturnType::WRONG_ARGUMENT;
             const u8 newMode[1] = {Utility::StringToU8(commandArgs[4], &didError)};
             if (didError) return TerminalCommandHandlerReturnType::WRONG_ARGUMENT;
-            logt(MATAGEEK_LOG_TAG, "Trying to change state %u, %s", targetNodeId, newMode == 0 ? "SETUP" : "DETECT");
-            configuration.matageekMode = newMode == 0 ? MatageekMode::SETUP : MatageekMode::DETECT;
+            logt(MATAGEEK_LOG_TAG, "Trying to request change mode %u, %s", targetNodeId,
+                 newMode[0] == 0 ? "SETUP" : "DETECT");
             SendModuleActionMessage(MessageType::MODULE_TRIGGER_ACTION, targetNodeId,
                                     MatageekModuleTriggerActionMessages::MODE_CHANGE, 0, newMode, 1, false);
             return TerminalCommandHandlerReturnType::SUCCESS;
@@ -129,9 +129,8 @@ void MatageekModule::MeshMessageReceivedHandler(BaseConnection* connection, Base
                 SendDetectMessage(packet->header.sender);
             }
             if (packet->actionType == MatageekModuleTriggerActionMessages::MODE_CHANGE) {
+                logt(MATAGEEK_LOG_TAG, "change mode received %u, %u", packet->header.sender, packet->data[0]);
                 ChangeMatageekMode(packet->data[0] == 0 ? MatageekMode::SETUP : MatageekMode::DETECT);
-                logt(MATAGEEK_LOG_TAG, "change mode received %u, %s", packet->header.sender,
-                     packet->data[0] == 0 ? "SETUP" : "DETECT");
             }
         }
     }
@@ -171,6 +170,17 @@ void MatageekModule::ChangeMatageekMode(const MatageekMode& newMode) {
     }
     if (nodeModule == nullptr) return;
 
-    if (newMode == MatageekMode::SETUP) nodeModule->ChangeState(DiscoveryState::HIGH);
-    if (newMode == MatageekMode::DETECT) nodeModule->ChangeState(DiscoveryState::OFF);
+    logt(MATAGEEK_LOG_TAG, "change mode %s", newMode == MatageekMode::SETUP ? "SETUP" : "DETECT");
+    switch (newMode) {
+        case MatageekMode::SETUP:
+            configuration.matageekMode = MatageekMode::SETUP;
+            nodeModule->ChangeState(DiscoveryState::HIGH);
+            break;
+        case MatageekMode::DETECT:
+            configuration.matageekMode = MatageekMode::DETECT;
+            nodeModule->ChangeState(DiscoveryState::OFF);
+            break;
+        default:
+            break;
+    }
 }
