@@ -126,12 +126,7 @@ void MatageekModule::MeshMessageReceivedHandler(BaseConnection* connection, Base
         if (packet->moduleId == vendorModuleId) {
             if (packet->actionType == MatageekModule::MatageekModuleTriggerActionMessages::TRAP_STATE) {
                 logt(MATAGEEK_LOG_TAG, "trap request received");
-                const u8 trapState[1] = {GetTrapState() ? (u8)1 : (u8)0};
-                logt(MATAGEEK_LOG_TAG, "Trying to send trap state %u, %s", packet->header.sender,
-                     trapState[0] == 0 ? "not fired" : "fired");
-                SendModuleActionMessage(MessageType::MODULE_ACTION_RESPONSE, packet->header.sender,
-                                        MatageekModuleActionResponseMessages::TRAP_STATE_RESPONSE, 0, trapState, 1,
-                                        false);
+                SendDetectMessage(packet->header.sender);
             }
             if (packet->actionType == MatageekModuleTriggerActionMessages::MODE_CHANGE) {
                 ChangeMatageekMode(packet->data[0] == 0 ? MatageekMode::SETUP : MatageekMode::DETECT);
@@ -156,8 +151,12 @@ void MatageekModule::MeshMessageReceivedHandler(BaseConnection* connection, Base
     }
 }
 
-// not implemented
-bool MatageekModule::SendCurrentState(const bool& network, const bool& detect) { return true; }
+ErrorTypeUnchecked MatageekModule::SendDetectMessage(const NodeId& sender) const {
+    const u8 trapState[1] = {GetTrapState() ? (u8)1 : (u8)0};
+    logt(MATAGEEK_LOG_TAG, "Trying to send trap state %u, %s", sender, trapState[0] == 0 ? "not fired" : "fired");
+    return SendModuleActionMessage(MessageType::MODULE_ACTION_RESPONSE, sender,
+                                   MatageekModuleActionResponseMessages::TRAP_STATE_RESPONSE, 0, trapState, 1, false);
+}
 
 void MatageekModule::ChangeMatageekMode(const MatageekMode& newMode) {
     // if same mode, do nothing. May be Reset highToLowDiscoveryTimeSec.

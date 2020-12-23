@@ -106,7 +106,10 @@ class MatageekModule : public Module {
     // only use for matageek
    private:
     // true: trap fired, false: trap not fired
-    bool GetTrapState() { return true; }                             // not implmented
-    bool SendCurrentState(const bool& network, const bool& detect);  // not implmented
+    bool GetTrapState() const { return true; }  // not implmented
     void ChangeMatageekMode(const MatageekMode& newMode);
+    ErrorTypeUnchecked SendDetectMessage(const NodeId& sender) const;
+
+    //############################ Gateway Method
+    bool CommitCurrentState(const bool& network, const bool& detect);  // not implmented
 };
