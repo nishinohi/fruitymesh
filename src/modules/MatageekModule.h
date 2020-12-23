@@ -38,9 +38,15 @@
  */
 
 // This should be set to the correct vendor and subId
-constexpr VendorModuleId MATAGEEK_MODULE_ID = GET_VENDOR_MODULE_ID(0xABCD, 1);
+constexpr VendorModuleId MATAGEEK_MODULE_ID = GET_VENDOR_MODULE_ID(0xAB24, 1);
 
 constexpr u8 MATAGEEK_MODULE_CONFIG_VERSION = 1;
+
+// only use for matageek
+enum class MatageekMode {
+    SETUP = 0,
+    DETECT = 1,
+};
 
 #pragma pack(push)
 #pragma pack(1)
@@ -48,21 +54,20 @@ constexpr u8 MATAGEEK_MODULE_CONFIG_VERSION = 1;
 struct MatageekModuleConfiguration : VendorModuleConfiguration {
     // Insert more persistent config values here
     u8 exampleValue;
+    MatageekMode mode;
 };
 #pragma pack(pop)
 
 class MatageekModule : public Module {
    public:
     enum MatageekModuleTriggerActionMessages {
-        COMMAND_ONE_MESSAGE = 0,
-        COMMAND_TWO_MESSAGE = 1,
-        TRIGGER_PING = 2,
+        TRAP_STATE = 0,
+        MODE_CHANGE = 1,
     };
 
     enum MatageekModuleActionResponseMessages {
-        COMMAND_ONE_MESSAGE_RESPONSE = 0,
-        COMMAND_TWO_MESSAGE_RESPONSE = 1,
-        TRIGGER_PING_RESPONSE = 2,
+        TRAP_STATE_RESPONSE = 0,
+        MODE_CHANGE_RESPONSE = 1,
     };
 
     //####### Module messages (these need to be packed)
@@ -97,4 +102,9 @@ class MatageekModule : public Module {
 #ifdef TERMINAL_ENABLED
     TerminalCommandHandlerReturnType TerminalCommandHandler(const char* commandArgs[], u8 commandArgsSize) override;
 #endif
+
+    // only use for matageek
+   private:
+    // true: trap fired, false: trap not fired
+    bool GetTrapState() { return true; }  // not implmented
 };

@@ -34,11 +34,13 @@
 #include <Node.h>
 #include <Utility.h>
 
-MatageekModule::MatageekModule() : Module(MATAGEEK_MODULE_ID, "template") {
+#define MATAGEEK_LOG_TAG "MATAMOD"
+
+MatageekModule::MatageekModule() : Module(MATAGEEK_MODULE_ID, "matageek") {
     // Register callbacks n' stuff
 
     // Enable the logtag for our vendor module template
-    GS->logger.EnableTag("MATAMOD");
+    GS->logger.EnableTag(MATAGEEK_LOG_TAG);
 
     // Save configuration to base class variables
     // sizeof configuration must be a multiple of 4 bytes
@@ -56,7 +58,7 @@ void MatageekModule::ResetToDefaultConfiguration() {
     configuration.moduleVersion = MATAGEEK_MODULE_CONFIG_VERSION;
 
     // Set additional config values...
-
+    configuration.mode = MatageekMode::SETUP;
     // This line allows us to have different configurations of this module depending on the featureset
     SET_FEATURESET_CONFIGURATION_VENDOR(&configuration, this);
 }
@@ -80,45 +82,30 @@ void MatageekModule::TimerEventHandler(u16 passedTimeDs) {
 #ifdef TERMINAL_ENABLED
 TerminalCommandHandlerReturnType MatageekModule::TerminalCommandHandler(const char* commandArgs[], u8 commandArgsSize) {
     // React on commands, return true if handled, false otherwise
-    if (TERMARGS(0, "matamod")) {
-        NodeId targetNodeId = Utility::StringToI16(commandArgs[1]);
-        logt("MATAMOD", "Trying to ping node %u", targetNodeId);
-
-        u8 data[1] = {123};
-        SendModuleActionMessage(MessageType::MODULE_TRIGGER_ACTION, targetNodeId,
-                                MatageekModuleTriggerActionMessages::TRIGGER_PING, 0, data, 1, false);
-
-        return TerminalCommandHandlerReturnType::SUCCESS;
-    }
-
     if (commandArgsSize >= 3 && TERMARGS(2, moduleName)) {
-        if (TERMARGS(0, "action")) {
-            if (!TERMARGS(2, moduleName)) return TerminalCommandHandlerReturnType::UNKNOWN;
+        if (!TERMARGS(0, "action")) return Module::TerminalCommandHandler(commandArgs, commandArgsSize);
 
-            if (commandArgsSize >= 5 && TERMARGS(3, "one")) {
-                logt("MATAMOD", "Command one executed");
-
-                MatageekModuleCommandOneMessage data;
-                data.exampleValue = Utility::StringToU8(commandArgs[4]);
-
-                // PART 1 of sending a message: Some command is entered and a request message is sent
-                SendModuleActionMessage(MessageType::MODULE_TRIGGER_ACTION, NODE_ID_BROADCAST,
-                                        (u8)MatageekModuleTriggerActionMessages::COMMAND_ONE_MESSAGE, 0, (u8*)&data,
-                                        SIZEOF_MATAGEEK_MODULE_COMMAND_ONE_MESSAGE, true);
-
-                return TerminalCommandHandlerReturnType::SUCCESS;
-            } else if (commandArgsSize >= 4 && TERMARGS(3, "two")) {
-                logt("MATAMOD", "Command two executed");
-
-                SendModuleActionMessage(MessageType::MODULE_TRIGGER_ACTION, NODE_ID_BROADCAST,
-                                        (u8)MatageekModuleTriggerActionMessages::COMMAND_TWO_MESSAGE, 0, nullptr, 0,
-                                        true, true);
-
-                return TerminalCommandHandlerReturnType::SUCCESS;
-            }
-
-            return TerminalCommandHandlerReturnType::UNKNOWN;
+        bool didError = false;
+        if (commandArgsSize >= 4 && TERMARGS(3, "trap_state")) {
+            const NodeId targetNodeId = Utility::StringToU16(commandArgs[1], &didError);
+            if (didError) return TerminalCommandHandlerReturnType::WRONG_ARGUMENT;
+            logt(MATAGEEK_LOG_TAG, "Trying to request trap state %u", targetNodeId);
+            SendModuleActionMessage(MessageType::MODULE_TRIGGER_ACTION, targetNodeId,
+                                    MatageekModuleTriggerActionMessages::TRAP_STATE, 0, nullptr, 0, false);
+            return TerminalCommandHandlerReturnType::SUCCESS;
         }
+        if (commandArgsSize >= 5 && TERMARGS(3, "mode_change")) {
+            const NodeId targetNodeId = Utility::StringToU16(commandArgs[1], &didError);
+            if (didError) return TerminalCommandHandlerReturnType::WRONG_ARGUMENT;
+            const u8 newMode[1] = {Utility::StringToU8(commandArgs[4], &didError)};
+            if (didError) return TerminalCommandHandlerReturnType::WRONG_ARGUMENT;
+            logt(MATAGEEK_LOG_TAG, "Trying to change state %u, %s", targetNodeId, newMode == 0 ? "SETUP" : "DETECT");
+            configuration.mode = newMode == 0 ? MatageekMode::SETUP : MatageekMode::DETECT;
+            SendModuleActionMessage(MessageType::MODULE_TRIGGER_ACTION, targetNodeId,
+                                    MatageekModuleTriggerActionMessages::MODE_CHANGE, 0, newMode, 1, false);
+            return TerminalCommandHandlerReturnType::SUCCESS;
+        }
+        return TerminalCommandHandlerReturnType::UNKNOWN;
     }
 
     // Must be called to allow the module to get and set the config
@@ -137,20 +124,19 @@ void MatageekModule::MeshMessageReceivedHandler(BaseConnection* connection, Base
 
         // Check if our module is meant and we should trigger an action
         if (packet->moduleId == vendorModuleId) {
-            if (packet->actionType == MatageekModule::MatageekModuleTriggerActionMessages::TRIGGER_PING) {
-                logt("MATAMOD", "Ping request received with data: %d", packet->data[0]);
-
-                u8 data[2] = {packet->data[0], 111};
+            if (packet->actionType == MatageekModule::MatageekModuleTriggerActionMessages::TRAP_STATE) {
+                logt(MATAGEEK_LOG_TAG, "trap request received");
+                const u8 trapState[1] = {GetTrapState() ? (u8)1 : (u8)0};
+                logt(MATAGEEK_LOG_TAG, "Trying to send trap state %u, %s", packet->header.sender,
+                     trapState[0] == 0 ? "not fired" : "fired");
                 SendModuleActionMessage(MessageType::MODULE_ACTION_RESPONSE, packet->header.sender,
-                                        MatageekModuleActionResponseMessages::TRIGGER_PING_RESPONSE, 0, data, 2, false);
+                                        MatageekModuleActionResponseMessages::TRAP_STATE_RESPONSE, 0, trapState, 1,
+                                        false);
             }
-
-            if (packet->actionType == MatageekModuleTriggerActionMessages::COMMAND_ONE_MESSAGE) {
-                const MatageekModuleCommandOneMessage* data = (const MatageekModuleCommandOneMessage*)packet->data;
-
-                logt("MATAMOD", "Got command one message with %u", data->exampleValue);
-            } else if (packet->actionType == MatageekModuleTriggerActionMessages::COMMAND_TWO_MESSAGE) {
-                logt("MATAMOD", "Got command two message");
+            if (packet->actionType == MatageekModuleTriggerActionMessages::MODE_CHANGE) {
+                configuration.mode = packet->data[0] == 0 ? MatageekMode::SETUP : MatageekMode::DETECT;
+                logt(MATAGEEK_LOG_TAG, "change mode received %u, %s", packet->header.sender,
+                     packet->data[0] == 0 ? "SETUP" : "DETECT");
             }
         }
     }
@@ -162,12 +148,10 @@ void MatageekModule::MeshMessageReceivedHandler(BaseConnection* connection, Base
 
         // Check if our module is meant and we should trigger an action
         if (packet->moduleId == vendorModuleId) {
-            if (packet->actionType == MatageekModuleActionResponseMessages::TRIGGER_PING_RESPONSE) {
-                logt("MATAMOD", "Ping came back from %u with data %d, %d", packet->header.sender, packet->data[0],
-                     packet->data[1]);
+            if (packet->actionType == MatageekModuleActionResponseMessages::TRAP_STATE_RESPONSE) {
+                logt(MATAGEEK_LOG_TAG, "Trap state came back from %u with data %u", packet->header.sender,
+                     packet->data[0]);
             }
-
-            if (packet->actionType == MatageekModuleActionResponseMessages::COMMAND_ONE_MESSAGE_RESPONSE) {}
         }
     }
 }
