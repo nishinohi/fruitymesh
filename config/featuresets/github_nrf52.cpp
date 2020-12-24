@@ -47,7 +47,7 @@ void SetBoardConfiguration_github_nrf52(BoardConfiguration* c)
     //BoardConfiguration* c = (BoardConfiguration*)config;
     //e.g. setBoard_123(c);
     c->uartBaudRate = (u32)FruityHal::UartBaudrate::BAUDRATE_115200;
-
+    c->uartRTSPin = -1;
 }
 
 void SetFeaturesetConfiguration_github_nrf52(ModuleConfiguration* config, void* module)
@@ -57,6 +57,7 @@ void SetFeaturesetConfiguration_github_nrf52(ModuleConfiguration* config, void* 
         Conf::GetInstance().defaultLedMode = LedMode::CONNECTIONS;
         Conf::GetInstance().terminalMode = TerminalMode::PROMPT;
         Conf::GetInstance().lineFeedCode = LineFeedCode::CRLF;
+        Conf::GetInstance().highToLowDiscoveryTimeSec = SETUP_MODE_HIGH_TO_LOW_DISCOVERY_TIME_SEC;
     }
     else if (config->moduleId == ModuleId::NODE)
     {
@@ -71,9 +72,11 @@ void SetFeaturesetConfiguration_github_nrf52(ModuleConfiguration* config, void* 
 
 void SetFeaturesetConfigurationVendor_github_nrf52(VendorModuleConfiguration* config, void* module)
 {
-    if (config->moduleId == VENDOR_TEMPLATE_MODULE_ID)
+    if (config->moduleId == MATAGEEK_MODULE_ID)
     {
-        logt("TMOD", "Setting template module configuration for featureset");
+        logt(MATAGEEK_LOG_TAG, "Setting matageek module configuration for featureset");
+        FruityHal::GpioConfigureInterrupt(14, FruityHal::GpioPullMode::GPIO_PIN_PULLUP,
+                                          FruityHal::GpioTransistion::GPIO_TRANSITION_HIGH_TO_LOW, TrapFireHandler);
     }
 }
 

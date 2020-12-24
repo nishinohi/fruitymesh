@@ -32,6 +32,8 @@
 
 #include <Module.h>
 
+#define MATAGEEK_LOG_TAG "MATAMOD"
+
 /*
  * This is a template for a FruityMesh module.
  * A comment should be here to provide a least a short description of its purpose.
@@ -41,6 +43,10 @@
 constexpr VendorModuleId MATAGEEK_MODULE_ID = GET_VENDOR_MODULE_ID(0xAB24, 1);
 
 constexpr u8 MATAGEEK_MODULE_CONFIG_VERSION = 1;
+
+// discovery mode sec
+constexpr u16 SETUP_MODE_HIGH_TO_LOW_DISCOVERY_TIME_SEC = 3600;
+constexpr u16 DETECT_MODE_HIGH_TO_LOW_DISCOVERY_TIME_SEC = 100;
 
 // only use for matageek
 enum class MatageekMode {
@@ -58,6 +64,8 @@ struct MatageekModuleConfiguration : VendorModuleConfiguration {
 };
 #pragma pack(pop)
 
+void TrapFireHandler(u32 pin, FruityHal::GpioTransistion transistion);
+
 class MatageekModule : public Module {
    public:
     enum MatageekModuleTriggerActionMessages {
@@ -65,6 +73,7 @@ class MatageekModule : public Module {
         TRAP_FIRE,
         MODE_CHANGE,
         BATTERY_DEAD,
+        DISCOVERY_OFF,
     };
 
     enum MatageekModuleActionResponseMessages {
@@ -104,6 +113,8 @@ class MatageekModule : public Module {
     TerminalCommandHandlerReturnType TerminalCommandHandler(const char* commandArgs[], u8 commandArgsSize) override;
 #endif
 
+    void MeshConnectionChangedHandler(MeshConnection& connection) override final;
+
     // only use for matageek
    private:
     // true: trap fired, false: trap not fired
@@ -113,6 +124,9 @@ class MatageekModule : public Module {
     // true: available, false: dead
     bool CheckBattery() const { return true; }  // not implemented
     ErrorTypeUnchecked SendBatteryDeadMessage(const NodeId& targetNodeId) const;
+
+    //############################ util
+    Node* GetNodeModule();
 
     //############################ Gateway Method
     bool CommitCurrentState(const bool& network, const bool& detect);  // not implmented

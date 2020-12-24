@@ -28,13 +28,14 @@
 // ****************************************************************************/
 ////////////////////////////////////////////////////////////////////////////////
 
+#include <FruityHal.h>
 #include <GlobalState.h>
 #include <Logger.h>
 #include <MatageekModule.h>
 #include <Node.h>
 #include <Utility.h>
 
-#define MATAGEEK_LOG_TAG "MATAMOD"
+void TrapFireHandler(u32 pin, FruityHal::GpioTransistion transistion) { logt(MATAGEEK_LOG_TAG, "Trap fired"); }
 
 MatageekModule::MatageekModule() : Module(MATAGEEK_MODULE_ID, "matageek") {
     // Register callbacks n' stuff
@@ -124,6 +125,7 @@ void MatageekModule::MeshMessageReceivedHandler(BaseConnection* connection, Base
 
         // Check if our module is meant and we should trigger an action
         if (packet->moduleId == vendorModuleId) {
+            Node* nodeModule = nullptr;
             switch (packet->actionType) {
                 case MatageekModule::MatageekModuleTriggerActionMessages::TRAP_STATE:
                     logt(MATAGEEK_LOG_TAG, "trap request received");
@@ -136,6 +138,15 @@ void MatageekModule::MeshMessageReceivedHandler(BaseConnection* connection, Base
                 case MatageekModule::MatageekModuleTriggerActionMessages::BATTERY_DEAD:
                     logt(MATAGEEK_LOG_TAG, "battery dead received %u", packet->header.sender);
                     // CommitBatteryDead(packet->header.sender);
+                    break;
+                case MatageekModule::MatageekModuleTriggerActionMessages::DISCOVERY_OFF:
+                    logt(MATAGEEK_LOG_TAG, "discovery off received");
+                    if (configuration.matageekMode == MatageekMode::SETUP) {
+                        logt(MATAGEEK_LOG_TAG, "In setup mode, discovery state cannot turn off");
+                        break;
+                    }
+                    nodeModule = GetNodeModule();
+                    if (nodeModule != nullptr) nodeModule->ChangeState(DiscoveryState::OFF);
                     break;
                 default:
                     break;
@@ -158,6 +169,17 @@ void MatageekModule::MeshMessageReceivedHandler(BaseConnection* connection, Base
     }
 }
 
+void MatageekModule::MeshConnectionChangedHandler(MeshConnection& connection) {
+    // If DiscoveryState is OFF, DiscoveryState never changes without manual changing
+    if (connection.IsDisconnected()) {
+        if (configuration.matageekMode == MatageekMode::SETUP) return;
+        Node* nodeModule = GetNodeModule();
+        if (nodeModule == nullptr) return;
+        // If disconnect event happen in detect mode, change discovery state HIGH
+        nodeModule->ChangeState(DiscoveryState::HIGH);
+    }
+}
+
 ErrorTypeUnchecked MatageekModule::SendTrapStateMessageResponse(const NodeId& targetNodeId) const {
     const u8 trapState[1] = {GetTrapState() ? (u8)1 : (u8)0};
     logt(MATAGEEK_LOG_TAG, "Trying to send trap state %u, %s", targetNodeId, trapState[0] == 0 ? "not fired" : "fired");
@@ -175,6 +197,27 @@ void MatageekModule::ChangeMatageekMode(const MatageekMode& newMode) {
     // if same mode, do nothing. May be Reset highToLowDiscoveryTimeSec.
     if (configuration.matageekMode == newMode) return;
 
+    Node* nodeModule = GetNodeModule();
+    if (nodeModule == nullptr) return;
+
+    logt(MATAGEEK_LOG_TAG, "change mode %s", newMode == MatageekMode::SETUP ? "SETUP" : "DETECT");
+    switch (newMode) {
+        case MatageekMode::SETUP:
+            Conf::GetInstance().highToLowDiscoveryTimeSec = SETUP_MODE_HIGH_TO_LOW_DISCOVERY_TIME_SEC;
+            configuration.matageekMode = MatageekMode::SETUP;
+            nodeModule->ChangeState(DiscoveryState::HIGH);
+            break;
+        case MatageekMode::DETECT:
+            Conf::GetInstance().highToLowDiscoveryTimeSec = DETECT_MODE_HIGH_TO_LOW_DISCOVERY_TIME_SEC;
+            configuration.matageekMode = MatageekMode::DETECT;
+            nodeModule->ChangeState(DiscoveryState::OFF);
+            break;
+        default:
+            break;
+    }
+}
+
+Node* MatageekModule::GetNodeModule() {
     Node* nodeModule = nullptr;
     for (auto activateModule : GS->activeModules) {
         if (activateModule->moduleId == ModuleId::NODE) {
@@ -182,19 +225,5 @@ void MatageekModule::ChangeMatageekMode(const MatageekMode& newMode) {
             break;
         }
     }
-    if (nodeModule == nullptr) return;
-
-    logt(MATAGEEK_LOG_TAG, "change mode %s", newMode == MatageekMode::SETUP ? "SETUP" : "DETECT");
-    switch (newMode) {
-        case MatageekMode::SETUP:
-            configuration.matageekMode = MatageekMode::SETUP;
-            nodeModule->ChangeState(DiscoveryState::HIGH);
-            break;
-        case MatageekMode::DETECT:
-            configuration.matageekMode = MatageekMode::DETECT;
-            nodeModule->ChangeState(DiscoveryState::OFF);
-            break;
-        default:
-            break;
-    }
+    return nodeModule;
 }
