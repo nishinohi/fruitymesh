@@ -131,4 +131,7 @@ class MatageekModule : public Module {
     //############################ Gateway Method
     bool CommitCurrentState(const bool& network, const bool& detect);  // not implmented
     bool CommitBatteryDead(const NodeId& batteryDeadNodeId);           // not implmented
+
+   public:
+    ErrorTypeUnchecked SendTrapFireMessage(const NodeId& targetNodeId) const;
 };

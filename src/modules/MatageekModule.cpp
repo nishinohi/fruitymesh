@@ -35,7 +35,16 @@
 #include <Node.h>
 #include <Utility.h>
 
-void TrapFireHandler(u32 pin, FruityHal::GpioTransistion transistion) { logt(MATAGEEK_LOG_TAG, "Trap fired"); }
+void TrapFireHandler(u32 pin, FruityHal::GpioTransistion transistion) {
+    logt(MATAGEEK_LOG_TAG, "Trap fired");
+    for (auto activeModule : GS->activeModules) {
+        if (activeModule->vendorConfigurationPointer->moduleId == MATAGEEK_MODULE_ID) {
+            MatageekModule* matageekModule = reinterpret_cast<MatageekModule*>(activeModule);
+            matageekModule->SendTrapFireMessage(0);
+            return;
+        }
+    }
+}
 
 MatageekModule::MatageekModule() : Module(MATAGEEK_MODULE_ID, "matageek") {
     // Register callbacks n' stuff
@@ -128,8 +137,11 @@ void MatageekModule::MeshMessageReceivedHandler(BaseConnection* connection, Base
             Node* nodeModule = nullptr;
             switch (packet->actionType) {
                 case MatageekModule::MatageekModuleTriggerActionMessages::TRAP_STATE:
-                    logt(MATAGEEK_LOG_TAG, "trap request received");
+                    logt(MATAGEEK_LOG_TAG, "trap state received");
                     SendTrapStateMessageResponse(packet->header.sender);
+                    break;
+                case MatageekModule::MatageekModuleTriggerActionMessages::TRAP_FIRE:
+                    logt(MATAGEEK_LOG_TAG, "trap fire received");
                     break;
                 case MatageekModule::MatageekModuleTriggerActionMessages::MODE_CHANGE:
                     logt(MATAGEEK_LOG_TAG, "change mode received %u, %u", packet->header.sender, packet->data[0]);
@@ -185,6 +197,12 @@ ErrorTypeUnchecked MatageekModule::SendTrapStateMessageResponse(const NodeId& ta
     logt(MATAGEEK_LOG_TAG, "Trying to send trap state %u, %s", targetNodeId, trapState[0] == 0 ? "not fired" : "fired");
     return SendModuleActionMessage(MessageType::MODULE_ACTION_RESPONSE, targetNodeId,
                                    MatageekModuleActionResponseMessages::TRAP_STATE_RESPONSE, 0, trapState, 1, false);
+}
+
+ErrorTypeUnchecked MatageekModule::SendTrapFireMessage(const NodeId& targetNodeId) const {
+    logt(MATAGEEK_LOG_TAG, "Trying to send trap fire message");
+    return SendModuleActionMessage(MessageType::MODULE_TRIGGER_ACTION, targetNodeId,
+                                   MatageekModuleTriggerActionMessages::TRAP_FIRE, 0, nullptr, 0, false);
 }
 
 ErrorTypeUnchecked MatageekModule::SendBatteryDeadMessage(const NodeId& targetNodeId) const {
