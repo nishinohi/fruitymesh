@@ -212,7 +212,7 @@ ErrorTypeUnchecked MatageekModule::SendBatteryDeadMessage(const NodeId& targetNo
 }
 
 void MatageekModule::ChangeMatageekMode(const MatageekMode& newMode) {
-    // if same mode, do nothing. May be Reset highToLowDiscoveryTimeSec.
+    // if same mode, do nothing. May be Reset highDiscoveryTimeoutSec.
     if (configuration.matageekMode == newMode) return;
 
     Node* nodeModule = GetNodeModule();
@@ -221,12 +221,12 @@ void MatageekModule::ChangeMatageekMode(const MatageekMode& newMode) {
     logt(MATAGEEK_LOG_TAG, "change mode %s", newMode == MatageekMode::SETUP ? "SETUP" : "DETECT");
     switch (newMode) {
         case MatageekMode::SETUP:
-            Conf::GetInstance().highToLowDiscoveryTimeSec = SETUP_MODE_HIGH_TO_LOW_DISCOVERY_TIME_SEC;
+            Conf::GetInstance().highDiscoveryTimeoutSec = SETUP_MODE_HIGH_TO_LOW_DISCOVERY_TIME_SEC;
             configuration.matageekMode = MatageekMode::SETUP;
             nodeModule->ChangeState(DiscoveryState::HIGH);
             break;
         case MatageekMode::DETECT:
-            Conf::GetInstance().highToLowDiscoveryTimeSec = DETECT_MODE_HIGH_TO_LOW_DISCOVERY_TIME_SEC;
+            Conf::GetInstance().highDiscoveryTimeoutSec = DETECT_MODE_HIGH_TO_LOW_DISCOVERY_TIME_SEC;
             configuration.matageekMode = MatageekMode::DETECT;
             nodeModule->ChangeState(DiscoveryState::OFF);
             break;
