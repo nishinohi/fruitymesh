@@ -177,6 +177,7 @@ ErrorType FruityHal::StopTimer(swTimer timer){ return ErrorType::SUCCESS; }
 
 void FruityHal::SystemReset(){ }
 void FruityHal::SystemReset(bool softdeviceEnabled){ }
+void FruityHal::SystemOff(){ }
 RebootReason FruityHal::GetRebootReason(){ return RebootReason::UNKNOWN; }
 ErrorType FruityHal::ClearRebootReason(){ return ErrorType::SUCCESS; }
 void FruityHal::StartWatchdog(bool safeBoot){ }

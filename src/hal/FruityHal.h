@@ -406,6 +406,7 @@ namespace FruityHal
 
     void SystemReset();
     void SystemReset(bool softdeviceEnabled);
+    void SystemOff();
     RebootReason GetRebootReason();
     ErrorType ClearRebootReason();
     void StartWatchdog(bool safeBoot);

@@ -2093,6 +2093,12 @@ void FruityHal::SystemReset(bool softdeviceEnabled)
         NVIC_SystemReset();
 }
 
+void FruityHal::SystemOff()
+{ 
+    sd_power_system_off();
+}
+
+
 // Retrieves the reboot reason from the RESETREAS register
 RebootReason FruityHal::GetRebootReason()
 {
