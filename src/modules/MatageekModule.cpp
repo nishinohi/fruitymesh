@@ -107,12 +107,20 @@ TerminalCommandHandlerReturnType MatageekModule::TerminalCommandHandler(const ch
         if (commandArgsSize >= 5 && TERMARGS(3, "mode_change")) {
             const NodeId targetNodeId = Utility::StringToU16(commandArgs[1], &didError);
             if (didError) return TerminalCommandHandlerReturnType::WRONG_ARGUMENT;
-            const u8 newMode[1] = {Utility::StringToU8(commandArgs[4], &didError)};
+            const u8 newModeSend[1] = {Utility::StringToU8(commandArgs[4], &didError)};
             if (didError) return TerminalCommandHandlerReturnType::WRONG_ARGUMENT;
+            const MatageekMode newMode = newModeSend[0] == 0 ? MatageekMode::SETUP : MatageekMode::DETECT;
+
             logt(MATAGEEK_LOG_TAG, "Trying to request change mode %u, %s", targetNodeId,
-                 newMode[0] == 0 ? "SETUP" : "DETECT");
+                 newMode == MatageekMode::SETUP ? "SETUP" : "DETECT");
             SendModuleActionMessage(MessageType::MODULE_TRIGGER_ACTION, targetNodeId,
-                                    MatageekModuleTriggerActionMessages::MODE_CHANGE, 0, newMode, 1, false);
+                                    MatageekModuleTriggerActionMessages::MODE_CHANGE, 0, newModeSend, 1, false);
+
+            Node* node = GetNodeModule();
+            if (node == nullptr) return TerminalCommandHandlerReturnType::INTERNAL_ERROR;
+            FruityHal::DelayMs(500);
+            newMode == MatageekMode::SETUP ? node->SendEnrolledNodes(0, targetNodeId)
+                                           : node->SendEnrolledNodes(node->GetClusterSize(), targetNodeId);
             return TerminalCommandHandlerReturnType::SUCCESS;
         }
         return TerminalCommandHandlerReturnType::UNKNOWN;
@@ -150,15 +158,6 @@ void MatageekModule::MeshMessageReceivedHandler(BaseConnection* connection, Base
                 case MatageekModule::MatageekModuleTriggerActionMessages::BATTERY_DEAD:
                     logt(MATAGEEK_LOG_TAG, "battery dead received %u", packet->header.sender);
                     // CommitBatteryDead(packet->header.sender);
-                    break;
-                case MatageekModule::MatageekModuleTriggerActionMessages::DISCOVERY_OFF:
-                    logt(MATAGEEK_LOG_TAG, "discovery off received");
-                    if (configuration.matageekMode == MatageekMode::SETUP) {
-                        logt(MATAGEEK_LOG_TAG, "In setup mode, discovery state cannot turn off");
-                        break;
-                    }
-                    nodeModule = GetNodeModule();
-                    if (nodeModule != nullptr) nodeModule->ChangeState(DiscoveryState::OFF);
                     break;
                 default:
                     break;
@@ -215,20 +214,13 @@ void MatageekModule::ChangeMatageekMode(const MatageekMode& newMode) {
     // if same mode, do nothing. May be Reset highDiscoveryTimeoutSec.
     if (configuration.matageekMode == newMode) return;
 
-    Node* nodeModule = GetNodeModule();
-    if (nodeModule == nullptr) return;
-
     logt(MATAGEEK_LOG_TAG, "change mode %s", newMode == MatageekMode::SETUP ? "SETUP" : "DETECT");
     switch (newMode) {
         case MatageekMode::SETUP:
-            Conf::GetInstance().highDiscoveryTimeoutSec = SETUP_MODE_HIGH_TO_LOW_DISCOVERY_TIME_SEC;
             configuration.matageekMode = MatageekMode::SETUP;
-            nodeModule->ChangeState(DiscoveryState::HIGH);
             break;
         case MatageekMode::DETECT:
-            Conf::GetInstance().highDiscoveryTimeoutSec = DETECT_MODE_HIGH_TO_LOW_DISCOVERY_TIME_SEC;
             configuration.matageekMode = MatageekMode::DETECT;
-            nodeModule->ChangeState(DiscoveryState::OFF);
             break;
         default:
             break;

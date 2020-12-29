@@ -46,7 +46,6 @@ constexpr u8 MATAGEEK_MODULE_CONFIG_VERSION = 1;
 
 // discovery mode sec
 constexpr u16 SETUP_MODE_HIGH_TO_LOW_DISCOVERY_TIME_SEC = 3600;
-constexpr u16 DETECT_MODE_HIGH_TO_LOW_DISCOVERY_TIME_SEC = 100;
 
 // only use for matageek
 enum class MatageekMode {
@@ -73,7 +72,6 @@ class MatageekModule : public Module {
         TRAP_FIRE,
         MODE_CHANGE,
         BATTERY_DEAD,
-        DISCOVERY_OFF,
     };
 
     enum MatageekModuleActionResponseMessages {
