@@ -124,7 +124,8 @@ class MatageekModule : public Module {
     ErrorTypeUnchecked SendBatteryDeadMessage(const NodeId& targetNodeId) const;
 
     //############################ util
-    Node* GetNodeModule();
+    template <class T>
+    T* GetModuleById(const VendorModuleId moduleId);
 
     //############################ Gateway Method
     bool CommitCurrentState(const bool& network, const bool& detect);  // not implmented

@@ -116,7 +116,7 @@ TerminalCommandHandlerReturnType MatageekModule::TerminalCommandHandler(const ch
             SendModuleActionMessage(MessageType::MODULE_TRIGGER_ACTION, targetNodeId,
                                     MatageekModuleTriggerActionMessages::MODE_CHANGE, 0, newModeSend, 1, false);
 
-            Node* node = GetNodeModule();
+            Node* node = GetModuleById<Node>(static_cast<u32>(ModuleId::NODE));
             if (node == nullptr) return TerminalCommandHandlerReturnType::INTERNAL_ERROR;
             FruityHal::DelayMs(500);
             newMode == MatageekMode::SETUP ? node->SendEnrolledNodes(0, targetNodeId)
@@ -184,7 +184,7 @@ void MatageekModule::MeshConnectionChangedHandler(MeshConnection& connection) {
     // If DiscoveryState is OFF, DiscoveryState never changes without manual changing
     if (connection.IsDisconnected()) {
         if (configuration.matageekMode == MatageekMode::SETUP) return;
-        Node* nodeModule = GetNodeModule();
+        Node* nodeModule = GetModuleById<Node>(static_cast<u32>(ModuleId::NODE));
         if (nodeModule == nullptr) return;
         // If disconnect event happen in detect mode, change discovery state HIGH
         nodeModule->ChangeState(DiscoveryState::HIGH);
@@ -227,13 +227,14 @@ void MatageekModule::ChangeMatageekMode(const MatageekMode& newMode) {
     }
 }
 
-Node* MatageekModule::GetNodeModule() {
-    Node* nodeModule = nullptr;
+template <class T>
+T* MatageekModule::GetModuleById(const VendorModuleId moduleId) {
+    T* targetodule = nullptr;
     for (auto activateModule : GS->activeModules) {
         if (activateModule->moduleId == ModuleId::NODE) {
-            nodeModule = reinterpret_cast<Node*>(activateModule);
+            targetodule = reinterpret_cast<T*>(activateModule);
             break;
         }
     }
-    return nodeModule;
+    return targetodule;
 }
