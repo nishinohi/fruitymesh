@@ -28,6 +28,7 @@
 // ****************************************************************************/
 ////////////////////////////////////////////////////////////////////////////////
 #include "BeaconingModule.h"
+#include "CellularModule.h"
 #include "Config.h"
 #include "DebugModule.h"
 #include "EnrollmentModule.h"
@@ -102,6 +103,7 @@ u32 InitializeModules_github_dev_nrf52(bool createModule) {
 
     size += GS->InitializeModule<MeshAccessModule>(createModule);
     size += GS->InitializeModule<MatageekModule>(createModule);
+    if (GET_DEVICE_TYPE() == DeviceType::SINK) size += GS->InitializeModule<CellularModule>(createModule);
     return size;
 }
 

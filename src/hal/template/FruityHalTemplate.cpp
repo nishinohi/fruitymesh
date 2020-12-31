@@ -249,6 +249,7 @@ u32 FruityHal::CheckAndHandleUartError(){ return 0; }
 void FruityHal::UartHandleError(u32 error){ }
 bool FruityHal::UartCheckInputAvailable(){ return false; }
 FruityHal::UartReadCharBlockingResult FruityHal::UartReadCharBlocking(){ UartReadCharBlockingResult ret; ret.didError = false; return ret; }
+void FruityHal::UartPutDataBlockingWithTimeout(const u8* data, const u16& len){ }
 void FruityHal::UartPutStringBlockingWithTimeout(const char* message){ }
 void FruityHal::UartEnableReadInterrupt(){ }
 bool FruityHal::IsUartErroredAndClear(){ return false; }

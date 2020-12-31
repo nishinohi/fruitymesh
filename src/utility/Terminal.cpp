@@ -447,7 +447,7 @@ void Terminal::ProcessLine(char* line)
 #endif
 }
 
-i32 Terminal::TokenizeLine(char* line, u16 lineLength, const char* tokens)
+i32 Terminal::TokenizeLine(char* line, u16 lineLength, const char* tokens, const u8& tokenLen)
 {
     CheckedMemset(commandArgsPtr, 0, MAX_NUM_TERM_ARGS * sizeof(char*));
     commandArgsPtr[0] = &(line[0]);
@@ -460,7 +460,6 @@ i32 Terminal::TokenizeLine(char* line, u16 lineLength, const char* tokens)
         }
         if (tokens != nullptr) {
             bool isToken = false;
-            u8 tokenLen = sizeof(tokens) / sizeof(char);
             for (u8 jj = 0; jj < tokenLen; ++jj) {
                 if (line[i] != tokens[jj]) { continue; }
                 isToken = true;

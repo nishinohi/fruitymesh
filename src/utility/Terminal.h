@@ -133,8 +133,10 @@ public:
     //Checks if a line is available or reads a line if input is detected
     void CheckAndProcessLine();
     void ProcessLine(char* line);
+    void ClearReadBufferOffset() { readBufferOffset = 0; }
+    bool UartCheckLineFeedCode(const u8& byteBuffer);
     // default token is ' '
-    i32 TokenizeLine(char* line, u16 lineLength, const char* tokens = nullptr);
+    i32 TokenizeLine(char* line, u16 lineLength, const char* tokens = nullptr, const u8& tokenLen = 0);
 
     //Register a class that will be notified when the activation string is entered
     void AddTerminalJsonListener(TerminalJsonListener* callback);
@@ -151,6 +153,7 @@ public:
     const char** GetCommandArgsPtr();
     u8 GetReadBufferOffset();
     char* GetReadBuffer();
+    void SetReadBufferOffset(const u8& newValue) { readBufferOffset = newValue; }
 
     void EnableCrcChecks();
 #ifdef SIM_ENABLED
@@ -163,7 +166,6 @@ public:
 private:
     void UartEnable(bool promptAndEchoMode);
     void UartCheckAndProcessLine();
-    bool UartCheckLineFeedCode(const u8& byteBuffer);
     //Read - blocking (non-interrupt based)
     void UartReadLineBlocking();
     //Write (always blocking)

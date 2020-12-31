@@ -481,6 +481,7 @@ namespace FruityHal
     void UartHandleError(u32 error);
     bool UartCheckInputAvailable();
     UartReadCharBlockingResult UartReadCharBlocking();
+    void UartPutDataBlockingWithTimeout(const u8* data, const u16& len);
     void UartPutStringBlockingWithTimeout(const char* message);
     void UartEnableReadInterrupt();
     bool IsUartErroredAndClear();
