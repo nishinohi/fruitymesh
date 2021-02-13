@@ -85,6 +85,22 @@ struct EnrollmentModuleConfiguration : ModuleConfiguration {
     }EnrollmentModuleSetEnrollmentBySerialMessage;
     STATIC_ASSERT_SIZE(EnrollmentModuleSetEnrollmentBySerialMessage, 73);
 
+    constexpr int  SIZEOF_ENROLLMENT_MODULE_SET_ENROLLMENT_BROADCAST_MESSAGE_MIN = (6);
+    constexpr int SIZEOF_ENROLLMENT_MODULE_SET_ENROLLMENT_BROADCAST_MESSAGE = (71);
+    struct EnrollmentModuleSetEnrollmentBroadcastMessage
+    {
+        // u32 serialNumberIndex;
+        NodeId newNodeIdOffset;
+        NetworkId newNetworkId;
+        ClusterSize clusterSize;
+        std::array<u8, 16> newNetworkKey;
+        std::array<u8, 16> newUserBaseKey;
+        std::array<u8, 16> newOrganizationKey;
+        std::array<u8, 16> nodeKey; // Key used to connect to the unenrolled node
+        u8 timeoutSec; //how long to try to connect to the unenrolled node, 0 means default time
+    };
+    STATIC_ASSERT_SIZE(EnrollmentModuleSetEnrollmentBroadcastMessage, 71);
+
     struct EnrollmentModuleSetNetworkMessage
     {
         NetworkId newNetworkId;
@@ -154,6 +170,8 @@ class EnrollmentModule: public Module
             //SET_ENROLLMENT_BY_SERIAL = 2, //Deprecated since version 0.7.22
             SET_NETWORK                = 3,
             REQUEST_PROPOSALS          = 4,
+            SET_ENROLLMENT_BROADCAST   = 5,
+            ENROLLMENT_BROADCAST_SERIAL   = 6,
         };
 
         enum class EnrollmentModuleActionResponseMessages : u8 {
@@ -162,6 +180,8 @@ class EnrollmentModule: public Module
             ENROLLMENT_PROPOSAL        = 2,
             SET_NETWORK_RESPONSE       = 3,
             REQUEST_PROPOSALS_RESPONSE = 4,
+            ENROLLMENT_BROADCAST_RESPONSE   = 5,
+            ENROLLMENT_BROADCAST_SERIAL_RESPONSE   = 6,
         };
 
         void DispatchPreEnrollment(Module* lastModuleCalled, PreEnrollmentReturnCode lastStatus);
@@ -202,13 +222,26 @@ class EnrollmentModule: public Module
         //Make sure the union data follows immediately after the requestHeader. This allows us to cast the requestHeader from a ConnPacketModuleStart into a ConnPacketModule.
         static_assert(offsetof(TemporaryEnrollmentData, requestHeader) + sizeof(TemporaryEnrollmentData::requestHeader) == offsetof(TemporaryEnrollmentData, requestData ), "Wrong packing in TemporaryEnrollmentData");
         static_assert(offsetof(TemporaryEnrollmentData, requestHeader) + sizeof(TemporaryEnrollmentData::requestHeader) == offsetof(TemporaryEnrollmentData, unenrollData), "Wrong packing in TemporaryEnrollmentData");
+
+        struct TemporaryEnrollmentBroadcastData {
+            u16 newNodeId;
+            ClusterSize clusterSizeCounter;
+            EnrollmentStates state;
+            MessageLength packetLength;
+            ConnPacketModuleStart requestHeader;
+            EnrollmentModuleSetEnrollmentBroadcastMessage requestData;
+            u32 endTimeDs;
+        };
+        static_assert(offsetof(TemporaryEnrollmentBroadcastData, requestHeader) + sizeof(TemporaryEnrollmentBroadcastData::requestHeader) == offsetof(TemporaryEnrollmentBroadcastData, requestData), "Wrong packing in TemporaryEnrollmentBroadcastData");
 #pragma pack(pop)
 
         //While an enrollment request is active, we temporarily save the data here
         //This can be used for an enrollment request
         TemporaryEnrollmentData ted;
 
-
+        TemporaryEnrollmentBroadcastData tedBroadcast;
+        bool isBroadCaster = false;
+        ClusterSize clusterCounter = -1;
 
         //Save a few nearby node serials in this proposal message
         static constexpr int ENROLLMENT_PROPOSAL_MESSAGE_NUM_ENTRIES = 3;
@@ -231,6 +264,8 @@ class EnrollmentModule: public Module
 
         void EnrollOverMesh(ConnPacketModule const * packet, MessageLength packetLength, BaseConnection* connection);
 
+        void EnrollBroadcast(const NodeId& newNodeId);
+
         void SaveEnrollment(ConnPacketModuleStart* packet, MessageLength packetLength);
 
         void SaveUnenrollment(ConnPacketModuleStart* packet, MessageLength packetLength);
@@ -248,6 +283,14 @@ class EnrollmentModule: public Module
         bool IsSerialIndexInRequestProposalAndRemove(u32 serialIndex);
 
         void SendRequestProposalResponse(u32 serialIndex);
+
+        void StoreTemporaryBoradcastEnrollmentData(ConnPacketModule const * packet, const MessageLength& packetLength);
+
+        void PreEnrollmentBroadcastFailed();
+
+        EnrollmentModuleSetEnrollmentBySerialMessage ConvertEnrollmentBroadcastToBySerialMessage(
+            const EnrollmentModuleSetEnrollmentBroadcastMessage& broadcastMessage, const NodeId& newNodeId
+        );
 
     public:
         DECLARE_CONFIG_AND_PACKED_STRUCT(EnrollmentModuleConfiguration);

@@ -97,6 +97,18 @@ void EnrollmentModule::TimerEventHandler(u16 passedTimeDs)
         PreEnrollmentFailed();
     }
 
+    if (tedBroadcast.state == EnrollmentStates::PREENROLLMENT_RUNNING && isBroadCaster && clusterCounter == 0) {
+        clusterCounter = -1;
+        SendModuleActionMessage(MessageType::MODULE_TRIGGER_ACTION, NODE_ID_BROADCAST,
+                                (u8)EnrollmentModuleTriggerActionMessages::ENROLLMENT_BROADCAST_SERIAL, 0, nullptr, 0,
+                                false);
+    }
+    // Check if a PreEnrollment should time out
+    if(tedBroadcast.state == EnrollmentStates::PREENROLLMENT_RUNNING && GS->appTimerDs > tedBroadcast.endTimeDs){
+        logt("ENROLLMOD", "PreEnrollmentBroadcast timed out");
+        PreEnrollmentBroadcastFailed();
+    }
+
     MeshAccessConnectionHandle conn;
     if(ted.state > EnrollmentStates::PREENROLLMENT_RUNNING) conn = GS->cm.GetMeshAccessConnectionByUniqueId(ted.uniqueConnId);
 
@@ -208,6 +220,59 @@ TerminalCommandHandlerReturnType EnrollmentModule::TerminalCommandHandler(const 
                     requestHandle,
                     (u8*)&enrollmentMessage,
                     SIZEOF_ENROLLMENT_MODULE_SET_ENROLLMENT_BY_SERIAL_MESSAGE,
+                    false
+                );
+
+                return TerminalCommandHandlerReturnType::SUCCESS;
+            }
+            else if(TERMARGS(3,"broadcast"))
+            {
+                if (commandArgsSize < 7) return TerminalCommandHandlerReturnType::NOT_ENOUGH_ARGUMENTS;
+                EnrollmentModuleSetEnrollmentBroadcastMessage enrollmentBroadcastMessage;
+                CheckedMemset(&enrollmentBroadcastMessage, 0x00, SIZEOF_ENROLLMENT_MODULE_SET_ENROLLMENT_BY_SERIAL_MESSAGE);
+
+                //We clear the nodeKey with all F's for invalid key
+                enrollmentBroadcastMessage.nodeKey = {};
+
+                bool didError = false;
+
+                enrollmentBroadcastMessage.newNodeIdOffset = Utility::StringToU16(commandArgs[4], &didError);
+                enrollmentBroadcastMessage.newNetworkId = Utility::StringToU16(commandArgs[5], &didError);
+                if (enrollmentBroadcastMessage.newNetworkId <= 1)
+                {
+                    // Neither nodeId == 0 nor networkId == 0 are correct enrollments.
+                    // networkId == 1 is the enrollment network and also must not be used.
+                    return TerminalCommandHandlerReturnType::WRONG_ARGUMENT;
+                }
+                if(commandArgsSize > 6){
+                    Logger::ParseEncodedStringToBuffer(commandArgs[6], enrollmentBroadcastMessage.newNetworkKey.data(), 16);
+                }
+                if(commandArgsSize > 7){
+                    Logger::ParseEncodedStringToBuffer(commandArgs[7], enrollmentBroadcastMessage.newUserBaseKey.data(), 16);
+                }
+                if(commandArgsSize > 8){
+                    Logger::ParseEncodedStringToBuffer(commandArgs[8], enrollmentBroadcastMessage.newOrganizationKey.data(), 16);
+                }
+                if(commandArgsSize > 9){
+                    Logger::ParseEncodedStringToBuffer(commandArgs[9], enrollmentBroadcastMessage.nodeKey.data(), 16);
+                }
+                enrollmentBroadcastMessage.timeoutSec = commandArgsSize > 10? Utility::StringToU8(commandArgs[10], &didError) : 10;
+                u8 requestHandle = commandArgsSize > 12 ? Utility::StringToU8(commandArgs[12], &didError) : 0;
+                enrollmentBroadcastMessage.clusterSize = GS->node.GetClusterSize();
+                clusterCounter = enrollmentBroadcastMessage.clusterSize;
+
+                if (didError) return TerminalCommandHandlerReturnType::WRONG_ARGUMENT;
+                if (enrollmentBroadcastMessage.clusterSize < 0) return TerminalCommandHandlerReturnType::INTERNAL_ERROR;
+                
+                isBroadCaster = true;
+
+                SendModuleActionMessage(
+                    MessageType::MODULE_TRIGGER_ACTION,
+                    NODE_ID_BROADCAST,
+                    (u8)EnrollmentModuleTriggerActionMessages::SET_ENROLLMENT_BROADCAST,
+                    requestHandle,
+                    (u8*)&enrollmentBroadcastMessage,
+                    SIZEOF_ENROLLMENT_MODULE_SET_ENROLLMENT_BROADCAST_MESSAGE,
                     false
                 );
 
@@ -330,6 +395,17 @@ void EnrollmentModule::MeshMessageReceivedHandler(BaseConnection* connection, Ba
                 else {
                     EnrollOverMesh(packet, sendData->dataLength, connection);
                 }
+            } else if (actionType == EnrollmentModuleTriggerActionMessages::SET_ENROLLMENT_BROADCAST
+                && sendData->dataLength >= SIZEOF_CONN_PACKET_MODULE + SIZEOF_ENROLLMENT_MODULE_SET_ENROLLMENT_BROADCAST_MESSAGE_MIN) {
+                logt("ENROLLMOD", "EnrollmentModuleTriggerActionMessages SET_ENROLLMENT_BROADCAST");
+                const EnrollmentModuleSetEnrollmentBroadcastMessage* data = reinterpret_cast<const EnrollmentModuleSetEnrollmentBroadcastMessage*>(packet->data);
+                StoreTemporaryBoradcastEnrollmentData(packet, sendData->dataLength);
+                SendEnrollmentResponse(EnrollmentModuleActionResponseMessages::ENROLLMENT_BROADCAST_RESPONSE,
+                                       EnrollmentResponseCode::OK, packet->requestHandle);
+            } else if(actionType == EnrollmentModuleTriggerActionMessages::ENROLLMENT_BROADCAST_SERIAL)
+            {
+                SendEnrollmentResponse(EnrollmentModuleActionResponseMessages::ENROLLMENT_BROADCAST_SERIAL_RESPONSE,
+                                       EnrollmentResponseCode::OK, packet->requestHandle);
             //Unenrollment request
             } else if(actionType == EnrollmentModuleTriggerActionMessages::REMOVE_ENROLLMENT)
             {
@@ -471,6 +547,28 @@ void EnrollmentModule::MeshMessageReceivedHandler(BaseConnection* connection, Ba
 
                 logjson_partial("ENROLLMOD", "{\"nodeId\":%u,\"type\":\"%s\",\"module\":%u,", packet->header.sender, cmdName, (u8)ModuleId::ENROLLMENT_MODULE);
                 logjson("ENROLLMOD", "\"requestId\":%u,\"serialNumber\":\"%s\",\"code\":%u}" SEP,  packet->requestHandle, serialNumber, (u32)data->result);
+            } else if (actionType == EnrollmentModuleActionResponseMessages::ENROLLMENT_BROADCAST_RESPONSE &&
+                       sendData->dataLength >= SIZEOF_CONN_PACKET_MODULE + sizeof(EnrollmentModuleEnrollmentResponse)) {
+                if (isBroadCaster) {
+                    --clusterCounter;
+                    logt("ENROLLMOD", "clusterCounter: %d", clusterCounter);
+                }
+            } else if (actionType == EnrollmentModuleActionResponseMessages::ENROLLMENT_BROADCAST_SERIAL_RESPONSE &&
+                       sendData->dataLength >= SIZEOF_CONN_PACKET_MODULE + sizeof(EnrollmentModuleEnrollmentResponse)) {
+                EnrollmentModuleEnrollmentResponse const* data =
+                    (EnrollmentModuleEnrollmentResponse const*)packet->data;
+
+                // Get serial number from index
+                --(tedBroadcast.clusterSizeCounter);
+                if (Conf::GetInstance().GetSerialNumberIndex() >= data->serialNumberIndex) ++(tedBroadcast.newNodeId);
+
+                char serialNumber[NODE_SERIAL_NUMBER_MAX_CHAR_LENGTH];
+                Utility::GenerateBeaconSerialForIndex(data->serialNumberIndex, serialNumber);
+                logt("ENROLLMOD", "\"requestId\":%u,\"serialNumber\":\"%s\",\"code\":%u, \"clusterSizeCounter\":%d, \"newNodeId\":%u}" SEP, packet->requestHandle,
+                     serialNumber, (u32)data->result, tedBroadcast.clusterSizeCounter, tedBroadcast.newNodeId);
+                if (tedBroadcast.clusterSizeCounter == 0) {
+                    EnrollBroadcast(tedBroadcast.newNodeId);
+                }
             }
             else if(actionType == EnrollmentModuleActionResponseMessages::ENROLLMENT_PROPOSAL)
             {
@@ -579,6 +677,37 @@ void EnrollmentModule::Enroll(ConnPacketModule const * packet, MessageLength pac
     StoreTemporaryEnrollmentDataAndDispatch(packet, packetLength);
 
 }
+
+void EnrollmentModule::EnrollBroadcast(const NodeId& newNodeId) {
+    EnrollmentModuleSetEnrollmentBroadcastMessage const data = tedBroadcast.requestData;
+    logt("WARNING", "Enrollment (by serial) received nodeIdOffset:%u, networkid:%u, key[0]=%u, key[1]=%u, key[14]=%u, key[15]=%u",
+        data.newNodeIdOffset, data.newNetworkId, data.newNetworkKey[0], data.newNetworkKey[1], data.newNetworkKey[14], data.newNetworkKey[15]);
+
+    // Check if nodeId comes from a wrong range
+    if ((GET_DEVICE_TYPE() == DeviceType::ASSET &&
+         (newNodeId < NODE_ID_GLOBAL_DEVICE_BASE ||
+          newNodeId > (NODE_ID_GLOBAL_DEVICE_BASE + NODE_ID_GLOBAL_DEVICE_BASE_SIZE))) ||
+        (GET_DEVICE_TYPE() != DeviceType::ASSET &&
+         (newNodeId < NODE_ID_DEVICE_BASE ||
+          newNodeId > (NODE_ID_DEVICE_BASE + NODE_ID_DEVICE_BASE_SIZE)))) {
+        SendEnrollmentResponse(EnrollmentModuleActionResponseMessages::ENROLLMENT_RESPONSE,
+                               EnrollmentResponseCode::INCORRECT_NODE_ID, tedBroadcast.requestHeader.requestHandle);
+        return;
+    }
+
+    EnrollmentModuleSetEnrollmentBySerialMessage bySerialMessage = ConvertEnrollmentBroadcastToBySerialMessage(tedBroadcast.requestData, newNodeId);
+    ted.state = EnrollmentStates::PREENROLLMENT_RUNNING;
+    ted.endTimeDs = GS->appTimerDs + ENROLLMENT_MODULE_PRE_ENROLLMENT_TIMEOUT_DS;
+    ted.packetLength = SIZEOF_CONN_PACKET_MODULE + SIZEOF_ENROLLMENT_MODULE_SET_ENROLLMENT_BY_SERIAL_MESSAGE;
+    CheckedMemcpy(&ted.requestHeader, &tedBroadcast.requestHeader, sizeof(ConnPacketModuleStart));
+    ted.requestHeader.actionType = static_cast<u8>(EnrollmentModuleTriggerActionMessages::SET_ENROLLMENT_BY_SERIAL);
+    CheckedMemcpy(&ted.requestData, &bySerialMessage, sizeof(bySerialMessage));
+
+    tedBroadcast.state = EnrollmentStates::NOT_ENROLLING;
+
+    DispatchPreEnrollment(nullptr, PreEnrollmentReturnCode::DONE);
+}
+
 
 void EnrollmentModule::SaveEnrollment(ConnPacketModuleStart* packet, MessageLength packetLength)
 {
@@ -706,6 +835,58 @@ void EnrollmentModule::SendRequestProposalResponse(u32 serialIndex)
         sizeof(msg),
         false
     );
+}
+
+void EnrollmentModule::StoreTemporaryBoradcastEnrollmentData(ConnPacketModule const * packet, const MessageLength& packetLength) {
+    const EnrollmentModuleSetEnrollmentBroadcastMessage* data = reinterpret_cast<const EnrollmentModuleSetEnrollmentBroadcastMessage*>(packet->data);
+    tedBroadcast.clusterSizeCounter = data->clusterSize;
+    tedBroadcast.newNodeId = data->newNodeIdOffset;
+    tedBroadcast.state = EnrollmentStates::PREENROLLMENT_RUNNING;
+    tedBroadcast.endTimeDs = GS->appTimerDs + SEC_TO_DS(data->timeoutSec);
+    tedBroadcast.packetLength = packetLength;
+    CheckedMemcpy(&(tedBroadcast.requestHeader), packet, packetLength.GetRaw());
+}
+
+void EnrollmentModule::PreEnrollmentBroadcastFailed() {
+    logt("ENROLLMOD", "PreEnrollmentBroadcast failed");
+
+    isBroadCaster = false;
+    clusterCounter = -1;
+    // Clear ted data
+    CheckedMemset(&tedBroadcast, 0x00, sizeof(TemporaryEnrollmentBroadcastData));
+    tedBroadcast.state = EnrollmentStates::NOT_ENROLLING;
+
+    // Send a response to the enroller that the preenrollment failed
+    SendEnrollmentResponse(EnrollmentModuleActionResponseMessages::ENROLLMENT_RESPONSE,
+                           EnrollmentResponseCode::PREENROLLMENT_FAILED, tedBroadcast.requestHeader.requestHandle);
+}
+
+EnrollmentModuleSetEnrollmentBySerialMessage EnrollmentModule::ConvertEnrollmentBroadcastToBySerialMessage(
+    const EnrollmentModuleSetEnrollmentBroadcastMessage& broadcastMessage, const NodeId& newNodeId) {
+    EnrollmentModuleSetEnrollmentBySerialMessage enrollmentMessage;
+    CheckedMemset(&enrollmentMessage, 0x00, SIZEOF_ENROLLMENT_MODULE_SET_ENROLLMENT_BY_SERIAL_MESSAGE);
+    // We clear the nodeKey with all F's for invalid key
+    enrollmentMessage.nodeKey = {};
+
+    enrollmentMessage.serialNumberIndex = 0;
+    enrollmentMessage.newNodeId = newNodeId;
+    enrollmentMessage.newNetworkId = broadcastMessage.newNetworkId;
+    if (memcmp(broadcastMessage.newNetworkKey.data(), enrollmentMessage.newNetworkKey.data(), 16) != 0) {
+        CheckedMemcpy(enrollmentMessage.newNetworkKey.data(), broadcastMessage.newNetworkKey.data(), 16);
+    }
+    if (!memcmp(broadcastMessage.newUserBaseKey.data(), enrollmentMessage.newUserBaseKey.data(), 16) != 0) {
+        CheckedMemcpy(enrollmentMessage.newUserBaseKey.data(), broadcastMessage.newUserBaseKey.data(), 16);
+    }
+    if (!memcmp(broadcastMessage.newOrganizationKey.data(), enrollmentMessage.newOrganizationKey.data(), 16) != 0) {
+        CheckedMemcpy(enrollmentMessage.newOrganizationKey.data(), broadcastMessage.newOrganizationKey.data(), 16);
+    }
+    if (!memcmp(broadcastMessage.nodeKey.data(), enrollmentMessage.nodeKey.data(), 16) != 0) {
+        CheckedMemcpy(enrollmentMessage.nodeKey.data(), broadcastMessage.nodeKey.data(), 16);
+    }
+    enrollmentMessage.timeoutSec = broadcastMessage.timeoutSec;
+    enrollmentMessage.enrollOnlyIfUnenrolled = false;
+
+    return enrollmentMessage;
 }
 
 void EnrollmentModule::SaveUnenrollment(ConnPacketModuleStart* packet, MessageLength packetLength)
