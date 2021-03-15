@@ -116,7 +116,7 @@ class MatageekModule : public Module {
     // only use for matageek
    private:
     // true: trap fired, false: trap not fired
-    bool GetTrapState() const { return true; }  // not implmented
+    bool GetTrapState() const { return FruityHal::GpioPinRead(14) ; }  // not implmented
     void ChangeMatageekMode(const MatageekMode& newMode);
     ErrorTypeUnchecked SendTrapStateMessageResponse(const NodeId& targetNodeId) const;
     // true: available, false: dead
