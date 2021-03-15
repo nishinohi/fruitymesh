@@ -101,6 +101,10 @@ struct EnrollmentModuleConfiguration : ModuleConfiguration {
     };
     STATIC_ASSERT_SIZE(EnrollmentModuleSetEnrollmentBroadcastMessage, 71);
 
+    constexpr int  SIZEOF_ENROLLMENT_MODULE_SET_ENROLLMENT_BROADCAST_APP_START_MESSAGE_MIN = SIZEOF_ENROLLMENT_MODULE_SET_ENROLLMENT_BROADCAST_MESSAGE_MIN;
+    constexpr int SIZEOF_ENROLLMENT_MODULE_SET_ENROLLMENT_BROADCAST_APP_START_MESSAGE = SIZEOF_ENROLLMENT_MODULE_SET_ENROLLMENT_BROADCAST_MESSAGE;
+    typedef EnrollmentModuleSetEnrollmentBroadcastMessage EnrollmentModuleSetEnrollmentBroadcastAppStartMessage;
+
     struct EnrollmentModuleSetNetworkMessage
     {
         NetworkId newNetworkId;
@@ -172,6 +176,7 @@ class EnrollmentModule: public Module
             REQUEST_PROPOSALS          = 4,
             SET_ENROLLMENT_BROADCAST   = 5,
             ENROLLMENT_BROADCAST_SERIAL   = 6,
+            SET_ENROLLMENT_BROADCAST_APP_START   = 7,
         };
 
         enum class EnrollmentModuleActionResponseMessages : u8 {
@@ -182,6 +187,7 @@ class EnrollmentModule: public Module
             REQUEST_PROPOSALS_RESPONSE = 4,
             ENROLLMENT_BROADCAST_RESPONSE   = 5,
             ENROLLMENT_BROADCAST_SERIAL_RESPONSE   = 6,
+            SET_ENROLLMENT_BROADCAST_APP_START_RESPONSE   = 7,
         };
 
         void DispatchPreEnrollment(Module* lastModuleCalled, PreEnrollmentReturnCode lastStatus);

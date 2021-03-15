@@ -395,6 +395,27 @@ void EnrollmentModule::MeshMessageReceivedHandler(BaseConnection* connection, Ba
                 else {
                     EnrollOverMesh(packet, sendData->dataLength, connection);
                 }
+            } else if (actionType == EnrollmentModuleTriggerActionMessages::SET_ENROLLMENT_BROADCAST_APP_START
+                && sendData->dataLength >= SIZEOF_CONN_PACKET_MODULE + SIZEOF_ENROLLMENT_MODULE_SET_ENROLLMENT_BROADCAST_APP_START_MESSAGE_MIN) {
+                logt("ENROLLMOD", "EnrollmentModuleTriggerActionMessages SET_ENROLLMENT_BROADCAST_APP_START");
+                const EnrollmentModuleSetEnrollmentBroadcastAppStartMessage* data = reinterpret_cast<const EnrollmentModuleSetEnrollmentBroadcastAppStartMessage*>(packet->data);
+                EnrollmentModuleSetEnrollmentBroadcastMessage broadcastMessage;
+                CheckedMemset(&broadcastMessage, 0x00, SIZEOF_ENROLLMENT_MODULE_SET_ENROLLMENT_BROADCAST_APP_START_MESSAGE);
+                broadcastMessage.nodeKey = {};
+                CheckedMemcpy(&broadcastMessage, data, sendData->dataLength.GetRaw());
+                // update clusterSize by current size
+                broadcastMessage.clusterSize = GS->node.GetClusterSize();
+                if (broadcastMessage.clusterSize < 0) {
+                    logt("ENROLLMOD", "broadcast enroll wrong cluster size");
+                    return;
+                }
+                isBroadCaster = true;
+                clusterCounter = broadcastMessage.clusterSize;
+                logt("ENROLLMOD", "enroll app start instance: %d, isBroadcaster: %d, clusterCounter: %d", (int)this,  isBroadCaster, clusterCounter);
+                SendModuleActionMessage(MessageType::MODULE_TRIGGER_ACTION, NODE_ID_BROADCAST,
+                                        (u8)EnrollmentModuleTriggerActionMessages::SET_ENROLLMENT_BROADCAST, 0,
+                                        (u8*)&broadcastMessage,
+                                        sendData->dataLength.GetRaw() - SIZEOF_CONN_PACKET_MODULE, false);
             } else if (actionType == EnrollmentModuleTriggerActionMessages::SET_ENROLLMENT_BROADCAST
                 && sendData->dataLength >= SIZEOF_CONN_PACKET_MODULE + SIZEOF_ENROLLMENT_MODULE_SET_ENROLLMENT_BROADCAST_MESSAGE_MIN) {
                 logt("ENROLLMOD", "EnrollmentModuleTriggerActionMessages SET_ENROLLMENT_BROADCAST");
