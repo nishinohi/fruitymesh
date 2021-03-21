@@ -48,9 +48,14 @@ constexpr u8 MATAGEEK_MODULE_CONFIG_VERSION = 1;
 constexpr u16 SETUP_MODE_HIGH_TO_LOW_DISCOVERY_TIME_SEC = 3600;
 
 // only use for matageek
-enum class MatageekMode {
+enum class MatageekMode : u8 {
     SETUP = 0,
     DETECT = 1,
+};
+
+enum class MatageekResponseCode : u8 {
+    OK = 0,
+    FAILED = 1,
 };
 
 #pragma pack(push)
@@ -67,28 +72,46 @@ void TrapFireHandler(u32 pin, FruityHal::GpioTransistion transistion);
 
 class MatageekModule : public Module {
    public:
-    enum MatageekModuleTriggerActionMessages {
-        TRAP_STATE = 0,
+    enum MatageekModuleTriggerActionMessages : u8 {
+        STATE = 0,
         TRAP_FIRE,
         MODE_CHANGE,
         BATTERY_DEAD,
     };
 
-    enum MatageekModuleActionResponseMessages {
-        TRAP_STATE_RESPONSE = 0,
+    enum MatageekModuleActionResponseMessages : u8 {
+        STATE_RESPONSE = 0,
+        TRAP_FIRE_RESPONSE = 1,
+        MODE_CHANGE_RESPONSE = 2,
+        BATTERY_DEAD_RESPONSE = 3,
     };
 
     //####### Module messages (these need to be packed)
 #pragma pack(push)
 #pragma pack(1)
 
-    static constexpr int SIZEOF_MATAGEEK_MODULE_COMMAND_ONE_MESSAGE = 1;
+    static constexpr int SIZEOF_MATAGEEK_MODULE_STATUS_MESSAGE = 2;
     typedef struct {
-        // Insert values here
-        u8 exampleValue;
+        u8 trapState;
+        MatageekMode mode;
 
-    } MatageekModuleCommandOneMessage;
-    STATIC_ASSERT_SIZE(MatageekModuleCommandOneMessage, SIZEOF_MATAGEEK_MODULE_COMMAND_ONE_MESSAGE);
+    } MatageekModuleStatusMessage;
+    STATIC_ASSERT_SIZE(MatageekModuleStatusMessage, SIZEOF_MATAGEEK_MODULE_STATUS_MESSAGE);
+
+    static constexpr int SIZEOF_MATAGEEK_MODULE_MODE_CHANGE_MESSAGE = 3;
+    typedef struct {
+        MatageekMode mode;
+        ClusterSize clusterSize;
+
+    } MatageekModuleModeChangeMessage;
+    STATIC_ASSERT_SIZE(MatageekModuleModeChangeMessage, SIZEOF_MATAGEEK_MODULE_MODE_CHANGE_MESSAGE);
+
+    // Answers
+    static constexpr int SIZEOF_MATAGEEK_MODULE_RESPONSE_MESSAGE = 1;
+    struct MatageekModuleResponse {
+        MatageekResponseCode result;
+    };
+    STATIC_ASSERT_SIZE(MatageekModuleResponse, SIZEOF_MATAGEEK_MODULE_RESPONSE_MESSAGE);
 
 #pragma pack(pop)
     //####### Module messages end
@@ -115,10 +138,13 @@ class MatageekModule : public Module {
 
     // only use for matageek
    private:
+    // return response
+    void SendMatageekResponse(const NodeId& toSend, const MatageekModuleActionResponseMessages& responseType,
+                              const MatageekResponseCode& result, const u8& requestHandle);
     // true: trap fired, false: trap not fired
-    bool GetTrapState() const { return FruityHal::GpioPinRead(14) ; }  // not implmented
-    void ChangeMatageekMode(const MatageekMode& newMode);
-    ErrorTypeUnchecked SendTrapStateMessageResponse(const NodeId& targetNodeId) const;
+    bool GetTrapState() const { return FruityHal::GpioPinRead(14); }  // not implmented
+    void ChangeMatageekMode(const MatageekMode& newMode, const ClusterSize& clusterSize);
+    ErrorTypeUnchecked SendStateMessageResponse(const NodeId& targetNodeId) const;
     // true: available, false: dead
     bool CheckBattery() const { return true; }  // not implemented
     ErrorTypeUnchecked SendBatteryDeadMessage(const NodeId& targetNodeId) const;
