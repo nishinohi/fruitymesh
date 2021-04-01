@@ -28,6 +28,7 @@
 // ****************************************************************************/
 ////////////////////////////////////////////////////////////////////////////////
 
+#include <CellularModule.h>
 #include <FruityHal.h>
 #include <GlobalState.h>
 #include <Logger.h>
@@ -37,13 +38,9 @@
 
 void TrapFireHandler(u32 pin, FruityHal::GpioTransistion transistion) {
     logt(MATAGEEK_LOG_TAG, "Trap fired");
-    for (auto activeModule : GS->activeModules) {
-        if (activeModule->vendorConfigurationPointer->moduleId != MATAGEEK_MODULE_ID) continue;
-        MatageekModule* matageekModule = reinterpret_cast<MatageekModule*>(activeModule);
-        if (matageekModule->configuration.matageekMode == MatageekMode::SETUP) return;
-        matageekModule->SendTrapFireMessage(0);
-        return;
-    }
+    MatageekModule* matageekModule = reinterpret_cast<MatageekModule*>(GS->node.GetModuleById(MATAGEEK_MODULE_ID));
+    if (matageekModule->configuration.matageekMode == MatageekMode::SETUP) return;
+    matageekModule->SendTrapFireMessage(NODE_ID_BROADCAST);
 }
 
 MatageekModule::MatageekModule() : Module(MATAGEEK_MODULE_ID, "matageek") {
@@ -105,6 +102,11 @@ TerminalCommandHandlerReturnType MatageekModule::TerminalCommandHandler(const ch
                                     MatageekModuleTriggerActionMessages::STATE, 0, nullptr, 0, false);
             return TerminalCommandHandlerReturnType::SUCCESS;
         }
+        if (commandArgsSize >= 4 && TERMARGS(3, "trap_fire")) {
+            logt(MATAGEEK_LOG_TAG, "Trap fired");
+            SendTrapFireMessage(NODE_ID_BROADCAST);
+            return TerminalCommandHandlerReturnType::SUCCESS;
+        }
         if (commandArgsSize >= 5 && TERMARGS(3, "mode_change")) {
             MatageekModuleModeChangeMessage modeChange;
             // set mode
@@ -154,9 +156,12 @@ void MatageekModule::MeshMessageReceivedHandler(BaseConnection* connection, Base
                     logt(MATAGEEK_LOG_TAG, "trap state received");
                     SendStateMessageResponse(packet->header.sender);
                     break;
-                case MatageekModule::MatageekModuleTriggerActionMessages::TRAP_FIRE:
+                case MatageekModule::MatageekModuleTriggerActionMessages::TRAP_FIRE: {
                     logt(MATAGEEK_LOG_TAG, "trap fire received");
-                    break;
+                    CellularModule* pCellularModule = (CellularModule*)GS->node.GetModuleById(CELLULAR_MODULE_ID);
+                    if (pCellularModule == nullptr) break;
+                    pCellularModule->SendFiredNodeIdListByCellular(nullptr, 0);
+                } break;
                 case MatageekModule::MatageekModuleTriggerActionMessages::MODE_CHANGE: {
                     logt(MATAGEEK_LOG_TAG, "change mode received");
                     const MatageekModuleModeChangeMessage* modeChange =
