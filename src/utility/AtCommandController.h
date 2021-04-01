@@ -4,8 +4,8 @@
 
 #define DEFAULT_SUCCESS "OK"
 #define DEFAULT_ERROR "ERROR"
-#define POWERKEY_PIN 10
-#define POWERSUPPLY_PIN 11
+#define POWERKEY_PIN 22
+#define POWERSUPPLY_PIN 23
 #define ATCOMMAND_TIMEOUT_MS 300
 #define SORACOM_APN "soracom.io"
 #define SORACOM_USERNAME "sora"
