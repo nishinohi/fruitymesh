@@ -136,6 +136,8 @@ bool AtCommandController::SendAtCommandAndCheck(const char* atCommand, const u32
 void AtCommandController::Init() {
     FruityHal::GpioConfigureOutput(POWERSUPPLY_PIN);
     FruityHal::GpioConfigureOutput(POWERKEY_PIN);
+    FruityHal::GpioPinClear(POWERSUPPLY_PIN);
+    FruityHal::GpioPinClear(POWERKEY_PIN);
 }
 
 void AtCommandController::PowerSupply(const bool& on) {
@@ -144,6 +146,8 @@ void AtCommandController::PowerSupply(const bool& on) {
 
 // TODO: reset function
 bool AtCommandController::TurnOnOrReset(const u16& timeout) {
+    PowerSupply(true);
+    FruityHal::DelayMs(100);
     // already started
     // TODO: reset
     if (SendAtCommandAndCheck("AT")) {

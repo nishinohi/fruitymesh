@@ -13,6 +13,9 @@
 #define CONNECT_ID_NUM 12
 
 class AtCommandController {
+   public:
+    AtCommandController() { Init(); }
+
    private:
     i32 TokenizeResponse(char* response);
     template <class... T>
