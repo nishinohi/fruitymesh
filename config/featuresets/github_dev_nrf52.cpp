@@ -69,7 +69,7 @@ void SetFeaturesetConfiguration_github_dev_nrf52(ModuleConfiguration* config, vo
         // More info is available as part of the documentation in the Specification and the UICR chapter
         NodeConfiguration* c = (NodeConfiguration*)config;
         // Default state will be that the node is already enrolled
-        c->enrollmentState = EnrollmentState::ENROLLED;
+        // c->enrollmentState = EnrollmentState::ENROLLED;
         // Enroll the node by default in networkId 11
         c->networkId = 11;
         // Set a default network key of 22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22

@@ -11,7 +11,7 @@
 // ** Licensees holding valid commercial Bluerange licenses may use this file in
 // ** accordance with the commercial license agreement provided with the
 // ** Software or, alternatively, in accordance with the terms contained in
-// ** a written agreement between them and M-Way Solutions GmbH. 
+// ** a written agreement between them and M-Way Solutions GmbH.
 // ** For licensing terms and conditions see https://www.bluerange.io/terms-conditions. For further
 // ** information use the contact form at https://www.bluerange.io/contact.
 // **
@@ -27,67 +27,67 @@
 // **
 // ****************************************************************************/
 ////////////////////////////////////////////////////////////////////////////////
-#include "Config.h"
-#include "Node.h"
-#include "Utility.h"
-#include "DebugModule.h"
-#include "StatusReporterModule.h"
 #include "BeaconingModule.h"
-#include "ScanningModule.h"
+#include "CellularModule.h"
+#include "Config.h"
+#include "DebugModule.h"
 #include "EnrollmentModule.h"
-#include "IoModule.h"
-#include "MeshAccessModule.h"
-#include "VendorTemplateModule.h"
 #include "GlobalState.h"
+#include "IoModule.h"
+#include "MatageekModule.h"
+#include "MeshAccessModule.h"
+#include "Node.h"
+#include "ScanningModule.h"
+#include "StatusReporterModule.h"
+#include "Utility.h"
+#include "VendorTemplateModule.h"
 
 // This is an example featureset for the nRF52840
 // It has logging activated and is perfect for playing around with FruityMesh
 // It also has a default enrollment hardcoded so that all mesh nodes are
 // in the same mesh network after flashing
 
-void SetBoardConfiguration_github_dev_nrf52840(BoardConfiguration* c)
-{
-    //Additional boards can be put in here to be selected at runtime
-    //BoardConfiguration* c = (BoardConfiguration*)config;
-    //e.g. setBoard_123(c);
+void SetBoardConfiguration_github_dev_nrf52840(BoardConfiguration* c) {
+    // Additional boards can be put in here to be selected at runtime
+    // BoardConfiguration* c = (BoardConfiguration*)config;
+    // e.g. setBoard_123(c);
+    c->uartBaudRate = (u32)FruityHal::UartBaudrate::BAUDRATE_115200;
+    c->uartRTSPin = -1;
 }
 
-void SetFeaturesetConfiguration_github_dev_nrf52840(ModuleConfiguration* config, void* module)
-{
-    if (config->moduleId == ModuleId::CONFIG)
-    {
+void SetFeaturesetConfiguration_github_dev_nrf52840(ModuleConfiguration* config, void* module) {
+    if (config->moduleId == ModuleId::CONFIG) {
         Conf::GetInstance().defaultLedMode = LedMode::CONNECTIONS;
         Conf::GetInstance().terminalMode = TerminalMode::PROMPT;
-    }
-    else if (config->moduleId == ModuleId::NODE)
-    {
-        //Specifies a default enrollment for the github configuration
-        //This is just for illustration purpose so that all nodes are enrolled and connect to each other after flashing
-        //For production, all nodes should have a unique nodeKey in the UICR and should be unenrolled
-        //They can then be enrolled by the user e.g. by using a smartphone application
-        //More info is available as part of the documentation in the Specification and the UICR chapter
-        NodeConfiguration* c = (NodeConfiguration*) config;
-        //Default state will be that the node is already enrolled
-        c->enrollmentState = EnrollmentState::ENROLLED;
-        //Enroll the node by default in networkId 11
+        Conf::GetInstance().lineFeedCode = LineFeedCode::CRLF;
+        Conf::GetInstance().highDiscoveryTimeoutSec = SETUP_MODE_HIGH_TO_LOW_DISCOVERY_TIME_SEC;
+    } else if (config->moduleId == ModuleId::NODE) {
+        // Specifies a default enrollment for the github configuration
+        // This is just for illustration purpose so that all nodes are enrolled and connect to each other after flashing
+        // For production, all nodes should have a unique nodeKey in the UICR and should be unenrolled
+        // They can then be enrolled by the user e.g. by using a smartphone application
+        // More info is available as part of the documentation in the Specification and the UICR chapter
+        NodeConfiguration* c = (NodeConfiguration*)config;
+        // Default state will be that the node is already enrolled
+        // c->enrollmentState = EnrollmentState::ENROLLED;
+        // Enroll the node by default in networkId 11
         c->networkId = 11;
-        //Set a default network key of 22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22
+        // Set a default network key of 22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22
         CheckedMemcpy(c->networkKey, "\x22\x22\x22\x22\x22\x22\x22\x22\x22\x22\x22\x22\x22\x22\x22\x22", 16);
 
-        //Info: The default node key and other keys are set in Conf::LoadDefaults()
+        // Info: The default node key and other keys are set in Conf::LoadDefaults()
     }
 }
 
-void SetFeaturesetConfigurationVendor_github_dev_nrf52840(VendorModuleConfiguration* config, void* module)
-{
-    if (config->moduleId == VENDOR_TEMPLATE_MODULE_ID)
-    {
-        logt("TMOD", "Setting template module configuration for featureset");
+void SetFeaturesetConfigurationVendor_github_dev_nrf52840(VendorModuleConfiguration* config, void* module) {
+    if (config->moduleId == MATAGEEK_MODULE_ID) {
+        logt(MATAGEEK_LOG_TAG, "Setting matageek module configuration for featureset");
+        FruityHal::GpioConfigureInterrupt(14, FruityHal::GpioPullMode::GPIO_PIN_PULLUP,
+                                          FruityHal::GpioTransistion::GPIO_TRANSITION_HIGH_TO_LOW, TrapFireHandler);
     }
 }
 
-u32 InitializeModules_github_dev_nrf52840(bool createModule)
-{
+u32 InitializeModules_github_dev_nrf52840(bool createModule) {
     u32 size = 0;
     size += GS->InitializeModule<DebugModule>(createModule);
     size += GS->InitializeModule<StatusReporterModule>(createModule);
@@ -96,35 +96,27 @@ u32 InitializeModules_github_dev_nrf52840(bool createModule)
     size += GS->InitializeModule<EnrollmentModule>(createModule);
     size += GS->InitializeModule<IoModule>(createModule);
 
-    //Each Vendor module needs a RecordStorage id if it wants to store a persistent configuration
-    //see the section for VendorModules in RecordStorage.h for more info
-    size += GS->InitializeModule<VendorTemplateModule>(createModule, RECORD_STORAGE_RECORD_ID_VENDOR_MODULE_CONFIG_BASE + 0);
+    // Each Vendor module needs a RecordStorage id if it wants to store a persistent configuration
+    // see the section for VendorModules in RecordStorage.h for more info
+    size += GS->InitializeModule<VendorTemplateModule>(createModule,
+                                                       RECORD_STORAGE_RECORD_ID_VENDOR_MODULE_CONFIG_BASE + 0);
 
     size += GS->InitializeModule<MeshAccessModule>(createModule);
+    size += GS->InitializeModule<MatageekModule>(createModule);
+    if (GET_DEVICE_TYPE() == DeviceType::SINK) size += GS->InitializeModule<CellularModule>(createModule);
     return size;
 }
 
-DeviceType GetDeviceType_github_dev_nrf52840()
-{
-    return DeviceType::STATIC;
+DeviceType GetDeviceType_github_dev_nrf52840() { return DeviceType::STATIC; }
+
+Chipset GetChipset_github_dev_nrf52840() { return Chipset::CHIP_NRF52840; }
+
+FeatureSetGroup GetFeatureSetGroup_github_dev_nrf52840() { return FeatureSetGroup::NRF52840_DEV_GITHUB; }
+
+u32 GetWatchdogTimeout_github_dev_nrf52840() {
+    return 0;  // Watchdog disabled by default, activate if desired
 }
 
-Chipset GetChipset_github_dev_nrf52840()
-{
-    return Chipset::CHIP_NRF52840;
-}
-
-FeatureSetGroup GetFeatureSetGroup_github_dev_nrf52840()
-{
-    return FeatureSetGroup::NRF52840_DEV_GITHUB;
-}
-
-u32 GetWatchdogTimeout_github_dev_nrf52840()
-{
-    return 0; //Watchdog disabled by default, activate if desired
-}
-
-u32 GetWatchdogTimeoutSafeBoot_github_dev_nrf52840()
-{
-    return 0; //Safe Boot Mode disabled by default, activate if desired
+u32 GetWatchdogTimeoutSafeBoot_github_dev_nrf52840() {
+    return 0;  // Safe Boot Mode disabled by default, activate if desired
 }
