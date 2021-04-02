@@ -130,6 +130,13 @@ TerminalCommandHandlerReturnType CellularModule::TerminalCommandHandler(const ch
             SendFiredNodeIdListByCellular(nodeIdList, sizeof(nodeIdList) / sizeof(NodeId));
             return TerminalCommandHandlerReturnType::SUCCESS;
         }
+
+        if (commandArgsSize >= 4 && TERMARGS(3, "shutdown")) {
+            GS->terminal.SeggerRttPutString("Shutdown Module");
+            logt(CELLULAR_LOG_TAG, "Shutdown Module");
+            atComCtl.TurnOff(10000);
+            return TerminalCommandHandlerReturnType::SUCCESS;
+        }
     }
     // Must be called to allow the module to get and set the config
     return Module::TerminalCommandHandler(commandArgs, commandArgsSize);
