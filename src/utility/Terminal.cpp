@@ -479,6 +479,19 @@ i32 Terminal::TokenizeLine(char* line, u16 lineLength, const char* tokens, const
     return commandArgsSize;
 }
 
+bool Terminal::UartCheckLineFeedCode(const u8& byteBuffer) {
+    bool isGetLine = false;
+    const LineFeedCode lineFeedCode = Conf::GetInstance().lineFeedCode;
+    if (lineFeedCode == LineFeedCode::CRLF && readBufferOffset > 0) {
+        isGetLine = ((byteBuffer == '\n' && readBuffer[readBufferOffset - 1] == '\r') ||
+                     readBufferOffset >= TERMINAL_READ_BUFFER_LENGTH - 2);
+    } else {
+        const char lineFeedCodeChar = lineFeedCode == LineFeedCode::CR ? '\r' : '\n';
+        isGetLine = (byteBuffer == lineFeedCodeChar || readBufferOffset >= TERMINAL_READ_BUFFER_LENGTH - 1);
+    }
+    return isGetLine;
+}
+
 // ############################### UART
 // Uart communication expects a \r delimiter after a line to process the command
 // Results such as JSON objects are delimtied by \r\n
@@ -557,19 +570,6 @@ void Terminal::UartCheckAndProcessLine(){
     if(Conf::GetInstance().terminalMode != TerminalMode::PROMPT){
         FruityHal::UartEnableReadInterrupt();
     }
-}
-
-bool Terminal::UartCheckLineFeedCode(const u8& byteBuffer) {
-    bool isGetLine = false;
-    const LineFeedCode lineFeedCode = Conf::GetInstance().lineFeedCode;
-    if (lineFeedCode == LineFeedCode::CRLF && readBufferOffset > 0) {
-        isGetLine = ((byteBuffer == '\n' && readBuffer[readBufferOffset - 1] == '\r') ||
-                     readBufferOffset >= TERMINAL_READ_BUFFER_LENGTH - 2);
-    } else {
-        const char lineFeedCodeChar = lineFeedCode == LineFeedCode::CR ? '\r' : '\n';
-        isGetLine = (byteBuffer == lineFeedCodeChar || readBufferOffset >= TERMINAL_READ_BUFFER_LENGTH - 1);
-    }
-    return isGetLine;
 }
 
 //############################ UART_BLOCKING_READ
