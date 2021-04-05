@@ -38,14 +38,19 @@ class AtCommandController {
     bool CheckValidConnectId(const i8& _connectId) const { return _connectId >= 0 && _connectId < CONNECT_ID_NUM; }
     // Socket Open
     bool connectIds[CONNECT_ID_NUM];
+    bool uartActive = false;
 
    public:
-    enum SocketType { SOCKET_TCP = 0, SOCKET_UDP };
+    enum SocketType : u8 { SOCKET_TCP = 0, SOCKET_UDP };
+    void UartEnable(bool promptAndEchoMode);
+    void UartDisable();
 
     void Init();
     void PowerSupply(const bool& on);
     void PowerSuspend() { FruityHal::GpioPinClear(POWERSUPPLY_PIN); }
+    bool CheckModuleStartupState() { return SendAtCommandAndCheck("AT"); }
     bool TurnOnOrReset(const u16& timeout = 12000);
+    bool SetBaseSetting();
     bool TurnOff(const u16& timeout);
     bool Activate(const char* accessPointName = SORACOM_APN, const char* userName = SORACOM_USERNAME,
                   const char* password = SORACOM_PASSWORD, const u32& timeout = 120000);

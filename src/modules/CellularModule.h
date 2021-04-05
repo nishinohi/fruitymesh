@@ -97,6 +97,11 @@ class CellularModule : public Module {
 #endif
 
     // for cellular
+   private:
+    enum EcModuleStatus : u8 { SHUTDOWN = 0, WAKEING_UP, WAKED_UP, SOCKET_OPEN, SOCKET_CLOSE, SHUTTING_DOWN };
+    EcModuleStatus ecModuleStatus = EcModuleStatus::SHUTDOWN;
+
+   public:
     NodeId nodeIdList[NODE_ID_LIST_NUM];
 
     AtCommandController atComCtl;

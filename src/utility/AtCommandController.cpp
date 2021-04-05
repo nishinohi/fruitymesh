@@ -18,6 +18,22 @@ i32 AtCommandController::TokenizeResponse(char* response) {
     return GS->terminal.TokenizeLine(response, strlen(response), tokens, 2);
 }
 
+void AtCommandController::UartDisable() {
+    FruityHal::DisableUart();
+    uartActive = false;
+}
+
+void AtCommandController::UartEnable(bool promptAndEchoMode) {
+    // Disable UART if it was active before
+    FruityHal::DisableUart();
+    // Delay to fix successive stop or startterm commands
+    FruityHal::DelayMs(10);
+    GS->terminal.ClearReadBufferOffset();
+    GS->terminal.lineToReadAvailable = false;
+    FruityHal::EnableUart(promptAndEchoMode);
+    uartActive = true;
+}
+
 // warning: If "waitLineFeedCode" is false, strlen(response) doesn't return correct value
 template <class... T>
 bool AtCommandController::ReadResponseAndCheck(const u32& timeout, const char* succcessResponse,
@@ -148,13 +164,6 @@ void AtCommandController::PowerSupply(const bool& on) {
 bool AtCommandController::TurnOnOrReset(const u16& timeout) {
     PowerSupply(true);
     FruityHal::DelayMs(100);
-    // already started
-    // TODO: reset
-    if (SendAtCommandAndCheck("AT")) {
-        if (!SendAtCommandAndCheck("ATE0")) { return false; }
-        if (!SendAtCommandAndCheck("AT+QURCCFG=\"urcport\",\"uart1\"")) { return false; }
-        return true;
-    }
     // turn on signal
     FruityHal::GpioPinSet(POWERKEY_PIN);
     FruityHal::DelayMs(WAKEUP_SIGNAL_TIME_MS);
@@ -167,6 +176,12 @@ bool AtCommandController::TurnOnOrReset(const u16& timeout) {
     if (!SendAtCommandAndCheck("ATE0")) { return false; }
     if (!SendAtCommandAndCheck("AT+QURCCFG=\"urcport\",\"uart1\"")) { return false; }
     return true;
+}
+
+bool AtCommandController::SetBaseSetting() {
+    if (!SendAtCommandAndCheck("AT")) { return false; }
+    if (!SendAtCommandAndCheck("ATE0")) { return false; }
+    return SendAtCommandAndCheck("AT+QURCCFG=\"urcport\",\"uart1\"");
 }
 
 bool AtCommandController::TurnOff(const u16& timeout) {
@@ -203,6 +218,7 @@ bool AtCommandController::WaitForPSRegistration(const u32& timeout) {
     }
     return false;
 }
+
 bool AtCommandController::Activate(const char* accessPointName, const char* userName, const char* password,
                                    const u32& timeout) {
     if (!WaitForPSRegistration(2000)) {
@@ -225,6 +241,7 @@ i8 AtCommandController::SocketOpen(const char* host, const u16& port, const Sock
     char* response = GS->terminal.GetReadBuffer();
     const char tokens[] = {' ', ','};
     bool didError;
+    // check already opened connectId
     while (strncmp(response, "OK", 2) != 0) {
         if (TokenizeResponse(response) < 2) { return -1; }
         didError = false;
@@ -252,6 +269,7 @@ i8 AtCommandController::SocketOpen(const char* host, const u16& port, const Sock
 
 bool AtCommandController::SocketClose(const i8& _connectId) {
     if (!CheckValidConnectId(_connectId)) { return false; }
+    if (!connectIds[_connectId]) return false;
     char command[16];
     snprintf(command, 16, "AT+CLOSE=%d", _connectId);
     if (!SendAtCommandAndCheck(command, CONNECTION_WAIT_MS)) { return false; };

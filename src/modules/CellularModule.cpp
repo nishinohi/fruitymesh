@@ -84,35 +84,29 @@ void CellularModule::TimerEventHandler(u16 passedTimeDs) {
 }
 
 void CellularModule::SendFiredNodeIdListByCellular(const NodeId* nodeIdList, const size_t& listLen) {
+    // if (ecModuleStatus == EcModuleStatus::SHUTDOWN) { atComCtl.TurnOnOrReset(); }
     char data[] = "{\"t\0ime\":10}";
+    atComCtl.UartEnable(true);
     if (!atComCtl.TurnOnOrReset()) { return; }
     if (!atComCtl.Activate()) { return; }
 
     if (!pubSubClient.connect("testId")) {
-        GS->terminal.SeggerRttPutString("connect fail");
+        logt(CELLULAR_LOG_TAG, "connect fail");
         return;
     }
     if (pubSubClient.publish("beamdemo", "Hello ec21")) {
-        GS->terminal.SeggerRttPutString("send fail");
+        logt(CELLULAR_LOG_TAG, "send fail");
         pubSubClient.disconnect();
         return;
     }
-
     pubSubClient.disconnect();
-
-    // i8 connectId = atComCtl.SocketOpen("harvest.soracom.io", 8514, AtCommandController::SocketType::SOCKET_UDP);
-    // if (connectId == -1) { return; }
-    // if (!atComCtl.SocketSend(connectId, reinterpret_cast<const u8*>(data), 12)) { return; };
-    // u8 temp[1024];
-    // if (atComCtl.SocketReceive(connectId, temp, 10, 10000) == -1) { return; }
-
-    // if (!atComCtl.SocketClose()) { return; }
-    // if (!atComCtl.Deactivate()) { return; }
+    atComCtl.TurnOff(10000);
+    atComCtl.UartDisable();
 }
 
 #if IS_ACTIVE(BUTTONS)
 void CellularModule::ButtonHandler(u8 buttonId, u32 holdTime) {
-    GS->terminal.SeggerRttPutString("button lte\n");
+    logt(CELLULAR_LOG_TAG, "button lte\n");
     NodeId nodeIdList[] = {0, 1, 2, 3};
     SendFiredNodeIdListByCellular(nodeIdList, sizeof(nodeIdList) / sizeof(NodeId));
 }
