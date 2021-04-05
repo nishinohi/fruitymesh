@@ -124,7 +124,7 @@ TerminalCommandHandlerReturnType CellularModule::TerminalCommandHandler(const ch
         if (!TERMARGS(0, "action")) return Module::TerminalCommandHandler(commandArgs, commandArgsSize);
 
         if (commandArgsSize >= 4 && TERMARGS(3, "send")) {
-            GS->terminal.SeggerRttPutString("Trying to send data by cellular module");
+            logt(CELLULAR_LOG_TAG, "Trying to send data by cellular module");
             logt(CELLULAR_LOG_TAG, "Trying to send data by cellular module");
             NodeId nodeIdList[] = {0, 1, 2, 3};
             SendFiredNodeIdListByCellular(nodeIdList, sizeof(nodeIdList) / sizeof(NodeId));
@@ -132,7 +132,7 @@ TerminalCommandHandlerReturnType CellularModule::TerminalCommandHandler(const ch
         }
 
         if (commandArgsSize >= 4 && TERMARGS(3, "shutdown")) {
-            GS->terminal.SeggerRttPutString("Shutdown Module");
+            logt(CELLULAR_LOG_TAG, "Shutdown Module");
             logt(CELLULAR_LOG_TAG, "Shutdown Module");
             atComCtl.TurnOff(10000);
             return TerminalCommandHandlerReturnType::SUCCESS;

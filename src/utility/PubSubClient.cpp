@@ -164,9 +164,9 @@ bool PubSubClient::connect(const char* id, const char* user, const char* pass, c
                 if (pass != NULL) { length = writeString(pass, buffer, length); }
             }
 
-            GS->terminal.SeggerRttPutString("Send soracom beam");
-            for (int ii = 0; ii < length - 5; ++ii) { GS->terminal.SeggerRttPutChar(buffer[ii]); }
-            GS->terminal.SeggerRttPutString("\n");
+            logt("ATC", "Send soracom beam");
+            for (int ii = 0; ii < length - 5; ++ii) { logt("ATC", "%c", buffer[ii]); }
+            logt("ATC", "\n");
             write(MQTTCONNECT, buffer, length - 5);
 
             lastInActivity = lastOutActivity = FruityHal::GetRtcMs();

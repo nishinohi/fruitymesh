@@ -33,20 +33,20 @@ bool AtCommandController::ReadResponseAndCheck(const u32& timeout, const char* s
         if (CheckMultiResponse(response, errorResponse)) { return false; }
         if (CheckMultiResponse(response, succcessResponse)) {
             if (sizeof...(returnCodes) < 1) {
-                GS->terminal.SeggerRttPutString("receive: ");
-                GS->terminal.SeggerRttPutString(response);
-                GS->terminal.SeggerRttPutString("\n");
+                logt("ATC", "receive: ");
+                logt("ATC", response);
+                logt("ATC", "\n");
                 return true;
             }
             if (CheckResponseReturnCodes(response, returnCodes...)) {
-                GS->terminal.SeggerRttPutString("receive success return Code\n");
+                logt("ATC", "receive success return Code\n");
                 return true;
             }
             return false;
         }
     }
     // if (timeoutCallback != nullptr) { timeoutCallback(NULL); }
-    GS->terminal.SeggerRttPutString("timeout\n");
+    logt("ATC", "timeout\n");
     return false;
 }
 
@@ -84,7 +84,7 @@ bool AtCommandController::CheckResponseReturnCodes(const char* response, T... re
         i32 receivedReturnCode = Utility::StringToI16(returnCodeArgPtr, &didError);
         char temp[16];
         snprintf(temp, 16, "rc:%d\n", receivedReturnCode);
-        GS->terminal.SeggerRttPutString(temp);
+        logt("ATC", temp);
         if (didError || receivedReturnCode != returnCode) { return false; }
         ++argsIndex;
     }
@@ -110,9 +110,9 @@ bool AtCommandController::ReadLine() {
     readBuffer[GS->terminal.GetReadBufferOffset()] = '\0';
     // get only line feed code
     if (GS->terminal.GetReadBufferOffset() <= 0) { return false; }
-    GS->terminal.SeggerRttPutString("ReadLine: ");
-    GS->terminal.SeggerRttPutString(readBuffer);
-    GS->terminal.SeggerRttPutString("\n");
+    logt("ATC", "ReadLine: ");
+    logt("ATC", readBuffer);
+    logt("ATC", "\n");
     FruityHal::SetPendingEventIRQ();
     GS->terminal.ClearReadBufferOffset();
     return true;
@@ -125,9 +125,9 @@ bool AtCommandController::SendAtCommandAndCheck(const char* atCommand, const u32
     const u8 atCommandLen = strlen(atCommand) + 2;
     char atCommandWithCr[atCommandLen];
     snprintf(atCommandWithCr, atCommandLen, "%s\r", atCommand);
-    GS->terminal.SeggerRttPutString("Send:");
-    GS->terminal.SeggerRttPutString(atCommand);
-    GS->terminal.SeggerRttPutString("\n");
+    logt("ATC", "Send:");
+    logt("ATC", atCommand);
+    logt("ATC", "\n");
     FruityHal::UartPutStringBlockingWithTimeout(atCommandWithCr);
     return ReadResponseAndCheck(timeout, succcessResponse, errorResponse, waitLineFeedCode, timeoutCallback,
                                 returnCodes...);
@@ -306,7 +306,7 @@ i32 AtCommandController::SocketReceive(const i8& _connectId, u8* data, const u16
         if (receiveLen > 0) { return receiveLen; }
         FruityHal::DelayMs(100);
     }
-    GS->terminal.SeggerRttPutString("socket read timeout");
+    logt("ATC", "socket read timeout");
     return -1;
 }
 
@@ -317,10 +317,10 @@ bool AtCommandController::SocketSend(const i8& _connectId, const u8* data, const
     if (!SendAtCommandAndCheck(command, ATCOMMAND_TIMEOUT_MS, "> ", DEFAULT_ERROR, false)) { return false; }
     u16 ii = 0;
     while (ii < dataSize) {
-        GS->terminal.SeggerRttPutChar(data[ii]);
+        logt("ATC", "%c", data[ii]);
         ++ii;
     }
-    GS->terminal.SeggerRttPutString("\n");
+    logt("ATC", "\n");
     FruityHal::UartPutDataBlockingWithTimeout(data, dataSize);
     if (!ReadResponseAndCheck(CONNECTION_WAIT_MS, "SEND OK")) { return false; }
     if (!ReadResponseAndCheck(CONNECTION_WAIT_MS, "+QIURC")) { return false; }
