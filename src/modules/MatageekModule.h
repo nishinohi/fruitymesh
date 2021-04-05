@@ -133,6 +133,9 @@ class MatageekModule : public Module {
 #ifdef TERMINAL_ENABLED
     TerminalCommandHandlerReturnType TerminalCommandHandler(const char* commandArgs[], u8 commandArgsSize) override;
 #endif
+#if IS_ACTIVE(BUTTONS)
+    void ButtonHandler(u8 buttonId, u32 holdTime) override final;
+#endif
 
     void MeshConnectionChangedHandler(MeshConnection& connection) override final;
 

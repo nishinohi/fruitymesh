@@ -86,6 +86,13 @@ void MatageekModule::TimerEventHandler(u16 passedTimeDs) {
     // Do stuff on timer...
 }
 
+#if IS_ACTIVE(BUTTONS)
+void MatageekModule::ButtonHandler(u8 buttonId, u32 holdTime) {
+    logt(MATAGEEK_LOG_TAG, "button trap fire\n");
+    SendTrapFireMessage(NODE_ID_BROADCAST);
+}
+#endif
+
 #ifdef TERMINAL_ENABLED
 TerminalCommandHandlerReturnType MatageekModule::TerminalCommandHandler(const char* commandArgs[], u8 commandArgsSize) {
     // React on commands, return true if handled, false otherwise
