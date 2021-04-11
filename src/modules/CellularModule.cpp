@@ -44,6 +44,7 @@ CellularModule::CellularModule() : Module(CELLULAR_MODULE_ID, "cellular"), atCom
 
     // Enable the logtag for our vendor module template
     GS->logger.EnableTag(CELLULAR_LOG_TAG);
+    GS->logger.EnableTag("ATC");
 
     // Save configuration to base class variables
     // sizeof configuration must be a multiple of 4 bytes
