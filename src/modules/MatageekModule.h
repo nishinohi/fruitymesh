@@ -46,6 +46,11 @@ constexpr u8 MATAGEEK_MODULE_CONFIG_VERSION = 1;
 
 // discovery mode sec
 constexpr u16 SETUP_MODE_HIGH_TO_LOW_DISCOVERY_TIME_SEC = 3600;
+// resend time interval
+constexpr u16 RESEND_INTERVAL_DS = 600;  // 60sec(1min)
+// update numberOfEnrolledDevices when cluster size changed
+constexpr u16 UPDATE_NUMBER_OF_ENROLLED_DEVICES_INTERVAL_DS = 3000;  // 300sec(5min)
+constexpr u8 RETRY_COUNT = 5;
 
 // only use for matageek
 enum class MatageekMode : u8 {
@@ -63,8 +68,10 @@ enum class MatageekResponseCode : u8 {
 // Module configuration that is saved persistently (size must be multiple of 4)
 struct MatageekModuleConfiguration : VendorModuleConfiguration {
     // Insert more persistent config values here
-    u8 exampleValue;
     MatageekMode matageekMode;
+    u16 trapStateResendIntervalDs;
+    u16 batteryResendIntervalDs;
+    u16 updateNumberOfEnrolledDevicesIntervalDs;
 };
 #pragma pack(pop)
 
@@ -84,6 +91,11 @@ class MatageekModule : public Module {
         TRAP_FIRE_RESPONSE = 1,
         MODE_CHANGE_RESPONSE = 2,
         BATTERY_DEAD_RESPONSE = 3,
+    };
+
+    struct ResendCounter {
+        u8 retryCount;
+        bool isSent;
     };
 
     //####### Module messages (these need to be packed)
@@ -141,25 +153,31 @@ class MatageekModule : public Module {
 
     // only use for matageek
    private:
+    ResendCounter trapResendCounter = {.retryCount = 0, .isSent = true};
+    ResendCounter batteryResendCounter = {.retryCount = 0, .isSent = true};
+    bool updateEnrolledNodesFlag = false;
+    u16 updateEnrolledNodesPassedTimeds = 0;
+
     // return response
     void SendMatageekResponse(const NodeId& toSend, const MatageekModuleActionResponseMessages& responseType,
                               const MatageekResponseCode& result, const u8& requestHandle);
     // true: trap fired, false: trap not fired
-    bool GetTrapState() const { return FruityHal::GpioPinRead(14); }  // not implmented
+    bool GetTrapState() const { return FruityHal::GpioPinRead(14); }
+    // true: need to resend, false: no need to resend
+    bool ShouldResendTrapFireMessage() const {
+        return !trapResendCounter.isSent && trapResendCounter.retryCount > 0 && GetTrapState();
+    }
     void ChangeMatageekMode(const MatageekMode& newMode, const ClusterSize& clusterSize);
     ErrorTypeUnchecked SendStateMessageResponse(const NodeId& targetNodeId) const;
-    // true: available, false: dead
-    bool CheckBattery() const { return true; }  // not implemented
-    ErrorTypeUnchecked SendBatteryDeadMessage(const NodeId& targetNodeId) const;
-
-    //############################ util
-    template <class T>
-    T* GetModuleById(const VendorModuleId moduleId);
+    // remaining battery percentage
+    u8 CheckRemainingBattery() const { return 14; }  // not implemented
+    bool ShouldResendBatteryDeadMessage() const {
+        return !batteryResendCounter.isSent && batteryResendCounter.retryCount > 0 && CheckRemainingBattery() < 15;
+    }
+    ErrorTypeUnchecked SendBatteryDeadMessage(const NodeId& targetNodeId);
 
     //############################ Gateway Method
-    bool CommitCurrentState(const bool& network, const bool& detect);  // not implmented
-    bool CommitBatteryDead(const NodeId& batteryDeadNodeId);           // not implmented
 
    public:
-    ErrorTypeUnchecked SendTrapFireMessage(const NodeId& targetNodeId) const;
+    ErrorTypeUnchecked SendTrapFireMessage(const NodeId& targetNodeId);
 };

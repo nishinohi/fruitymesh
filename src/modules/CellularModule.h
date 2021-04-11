@@ -108,7 +108,7 @@ class CellularModule : public Module {
     EcTwoOneModuleClient ecTwoOneClient;
     PubSubClient pubSubClient;
 
-    void SendFiredNodeIdListByCellular(const NodeId* nodeIdList, const size_t& listLen);
+    bool SendMqttContents(const char* contents);
 
 #if IS_ACTIVE(BUTTONS)
     void ButtonHandler(u8 buttonId, u32 holdTime) override final;

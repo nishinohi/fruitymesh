@@ -84,32 +84,43 @@ void CellularModule::TimerEventHandler(u16 passedTimeDs) {
     // Do stuff on timer...
 }
 
-void CellularModule::SendFiredNodeIdListByCellular(const NodeId* nodeIdList, const size_t& listLen) {
+bool CellularModule::SendMqttContents(const char* contents) {
     // if (ecModuleStatus == EcModuleStatus::SHUTDOWN) { atComCtl.TurnOnOrReset(); }
-    char data[] = "{\"t\0ime\":10}";
     atComCtl.UartEnable(true);
-    if (!atComCtl.TurnOnOrReset()) { return; }
-    if (!atComCtl.Activate()) { return; }
-
+    if (!atComCtl.TurnOnOrReset()) {
+        atComCtl.TurnOff(10000);
+        atComCtl.UartDisable();
+        return false;
+    }
+    if (!atComCtl.Activate()) {
+        atComCtl.TurnOff(10000);
+        atComCtl.UartDisable();
+        return false;
+    }
     if (!pubSubClient.connect("testId")) {
         logt(CELLULAR_LOG_TAG, "connect fail");
-        return;
+        atComCtl.TurnOff(10000);
+        atComCtl.UartDisable();
+        return false;
     }
-    if (pubSubClient.publish("beamdemo", "Hello ec21")) {
+    if (!pubSubClient.publish("beamdemo", contents)) {
         logt(CELLULAR_LOG_TAG, "send fail");
         pubSubClient.disconnect();
-        return;
+        atComCtl.TurnOff(10000);
+        atComCtl.UartDisable();
+        return false;
     }
+    logt(CELLULAR_LOG_TAG, "json: %s send success", contents);
     pubSubClient.disconnect();
     atComCtl.TurnOff(10000);
     atComCtl.UartDisable();
+    return true;
 }
 
 #if IS_ACTIVE(BUTTONS)
 void CellularModule::ButtonHandler(u8 buttonId, u32 holdTime) {
     logt(CELLULAR_LOG_TAG, "button lte\n");
-    NodeId nodeIdList[] = {0, 1, 2, 3};
-    SendFiredNodeIdListByCellular(nodeIdList, sizeof(nodeIdList) / sizeof(NodeId));
+    // SendMqttContents("{\"nodeIds\":[65535,65535]}");
 }
 #endif
 
@@ -120,14 +131,11 @@ TerminalCommandHandlerReturnType CellularModule::TerminalCommandHandler(const ch
 
         if (commandArgsSize >= 4 && TERMARGS(3, "send")) {
             logt(CELLULAR_LOG_TAG, "Trying to send data by cellular module");
-            logt(CELLULAR_LOG_TAG, "Trying to send data by cellular module");
-            NodeId nodeIdList[] = {0, 1, 2, 3};
-            SendFiredNodeIdListByCellular(nodeIdList, sizeof(nodeIdList) / sizeof(NodeId));
+            SendMqttContents("{\"nodeIds\":[0,1,2]}");
             return TerminalCommandHandlerReturnType::SUCCESS;
         }
 
         if (commandArgsSize >= 4 && TERMARGS(3, "shutdown")) {
-            logt(CELLULAR_LOG_TAG, "Shutdown Module");
             logt(CELLULAR_LOG_TAG, "Shutdown Module");
             atComCtl.TurnOff(10000);
             return TerminalCommandHandlerReturnType::SUCCESS;

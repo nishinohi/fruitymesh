@@ -35,6 +35,14 @@
 #include <MatageekModule.h>
 #include <Node.h>
 #include <Utility.h>
+#include <mini-printf.h>
+
+#include <initializer_list>
+
+// {"nodeIds":[]} = 14 char, NodeId max num "65535" = 5 char, "," is needed (listLen - 1) char, \0 = 1 char
+#define CALC_NODEIDS_JSON_MAX_LEN(listLen) 14 + (listLen * 5) + (listLen - 1) + 1
+// {"cluster":} = 12 char, cluster size max num "32767" = 5 char, \0 = 1 char
+#define CLUSTER_SIZE_JSON_MAX_LEN (12 + 5 + 1)
 
 void TrapFireHandler(u32 pin, FruityHal::GpioTransistion transistion) {
     logt(MATAGEEK_LOG_TAG, "Trap fired");
@@ -66,6 +74,9 @@ void MatageekModule::ResetToDefaultConfiguration() {
 
     // Set additional config values...
     configuration.matageekMode = MatageekMode::SETUP;
+    configuration.trapStateResendIntervalDs = RESEND_INTERVAL_DS;
+    configuration.batteryResendIntervalDs = RESEND_INTERVAL_DS;
+    configuration.updateNumberOfEnrolledDevicesIntervalDs = UPDATE_NUMBER_OF_ENROLLED_DEVICES_INTERVAL_DS;
     // This line allows us to have different configurations of this module depending on the featureset
     SET_FEATURESET_CONFIGURATION_VENDOR(&configuration, this);
 }
@@ -83,7 +94,34 @@ void MatageekModule::ConfigurationLoadedHandler(u8* migratableConfig, u16 migrat
 }
 
 void MatageekModule::TimerEventHandler(u16 passedTimeDs) {
-    // Do stuff on timer...
+    if (ShouldResendTrapFireMessage() && SHOULD_IV_TRIGGER(GS->appTimerDs + GS->appTimerRandomOffsetDs, passedTimeDs,
+                                                           configuration.trapStateResendIntervalDs)) {
+        trapResendCounter.retryCount--;
+        SendTrapFireMessage(NODE_ID_BROADCAST);
+    }
+    if (ShouldResendBatteryDeadMessage() && SHOULD_IV_TRIGGER(GS->appTimerDs + GS->appTimerRandomOffsetDs, passedTimeDs,
+                                                              configuration.batteryResendIntervalDs)) {
+        batteryResendCounter.retryCount--;
+        SendBatteryDeadMessage(NODE_ID_BROADCAST);
+    }
+    if (updateEnrolledNodesFlag) {
+        updateEnrolledNodesPassedTimeds += passedTimeDs;
+        if (updateEnrolledNodesPassedTimeds > configuration.updateNumberOfEnrolledDevicesIntervalDs) {
+            updateEnrolledNodesFlag = false;
+            updateEnrolledNodesPassedTimeds = 0;
+            // if node has cellular module, it will send Enrolled nodes for broadcast
+            CellularModule* cellularModule =
+                reinterpret_cast<CellularModule*>(GS->node.GetModuleById(CELLULAR_MODULE_ID));
+            if (cellularModule != nullptr) {
+                ClusterSize clusterSize = GS->node.GetClusterSize();
+                char json[CLUSTER_SIZE_JSON_MAX_LEN];
+                snprintf(json, CLUSTER_SIZE_JSON_MAX_LEN, "{\"cluster\":%d}", clusterSize);
+                cellularModule->SendMqttContents(json);
+                logt(MATAGEEK_LOG_TAG, "Send new Enrolled nodes: %u", clusterSize);
+                GS->node.SendEnrolledNodes(clusterSize > 0 ? clusterSize : 0, NODE_ID_BROADCAST);
+            }
+        }
+    }
 }
 
 #if IS_ACTIVE(BUTTONS)
@@ -114,6 +152,11 @@ TerminalCommandHandlerReturnType MatageekModule::TerminalCommandHandler(const ch
             SendTrapFireMessage(NODE_ID_BROADCAST);
             return TerminalCommandHandlerReturnType::SUCCESS;
         }
+        if (commandArgsSize >= 4 && TERMARGS(3, "battery_dead")) {
+            logt(MATAGEEK_LOG_TAG, "Battery dead");
+            SendBatteryDeadMessage(NODE_ID_BROADCAST);
+            return TerminalCommandHandlerReturnType::SUCCESS;
+        }
         if (commandArgsSize >= 5 && TERMARGS(3, "mode_change")) {
             MatageekModuleModeChangeMessage modeChange;
             // set mode
@@ -126,9 +169,7 @@ TerminalCommandHandlerReturnType MatageekModule::TerminalCommandHandler(const ch
                 if (didError) return TerminalCommandHandlerReturnType::WRONG_ARGUMENT;
                 modeChange.clusterSize = clusterSize;
             } else {
-                Node* node = GetModuleById<Node>(static_cast<u32>(ModuleId::NODE));
-                if (node == nullptr) return TerminalCommandHandlerReturnType::WRONG_ARGUMENT;
-                modeChange.clusterSize = node->GetClusterSize();
+                modeChange.clusterSize = GS->node.GetClusterSize();
             }
 
             logt(MATAGEEK_LOG_TAG, "Trying to request change mode %u, mode: %s, clusterSize: %d", destinationNode,
@@ -155,6 +196,14 @@ void MatageekModule::MeshMessageReceivedHandler(BaseConnection* connection, Base
         sendData->dataLength >= SIZEOF_CONN_PACKET_MODULE_VENDOR) {
         const ConnPacketModuleVendor* packet = reinterpret_cast<const ConnPacketModuleVendor*>(packetHeader);
 
+        auto sendMqttByCellular = [this](const char* key, const NodeId& nodeId) {
+            CellularModule* pCellularModule = (CellularModule*)GS->node.GetModuleById(CELLULAR_MODULE_ID);
+            if (pCellularModule == nullptr) return false;
+            char json[CALC_NODEIDS_JSON_MAX_LEN(1)];
+            snprintf(json, CALC_NODEIDS_JSON_MAX_LEN(1), "{\"%s\":[%u]}", key, nodeId);
+            return pCellularModule->SendMqttContents(json);
+        };
+
         // Check if our module is meant and we should trigger an action
         if (packet->moduleId == vendorModuleId) {
             Node* nodeModule = nullptr;
@@ -163,12 +212,14 @@ void MatageekModule::MeshMessageReceivedHandler(BaseConnection* connection, Base
                     logt(MATAGEEK_LOG_TAG, "trap state received");
                     SendStateMessageResponse(packet->header.sender);
                     break;
-                case MatageekModule::MatageekModuleTriggerActionMessages::TRAP_FIRE: {
+                case MatageekModule::MatageekModuleTriggerActionMessages::TRAP_FIRE:
                     logt(MATAGEEK_LOG_TAG, "trap fire received");
-                    CellularModule* pCellularModule = (CellularModule*)GS->node.GetModuleById(CELLULAR_MODULE_ID);
-                    if (pCellularModule == nullptr) break;
-                    pCellularModule->SendFiredNodeIdListByCellular(nullptr, 0);
-                } break;
+                    if (sendMqttByCellular("trap", packet->header.sender)) {
+                        SendMatageekResponse(packet->header.sender,
+                                             MatageekModuleActionResponseMessages::TRAP_FIRE_RESPONSE,
+                                             MatageekResponseCode::OK, 0);
+                    }
+                    break;
                 case MatageekModule::MatageekModuleTriggerActionMessages::MODE_CHANGE: {
                     logt(MATAGEEK_LOG_TAG, "change mode received");
                     const MatageekModuleModeChangeMessage* modeChange =
@@ -178,10 +229,14 @@ void MatageekModule::MeshMessageReceivedHandler(BaseConnection* connection, Base
                                          MatageekModuleActionResponseMessages::MODE_CHANGE_RESPONSE,
                                          MatageekResponseCode::OK, 0);
                 } break;
-                case MatageekModule::MatageekModuleTriggerActionMessages::BATTERY_DEAD:
+                case MatageekModule::MatageekModuleTriggerActionMessages::BATTERY_DEAD: {
                     logt(MATAGEEK_LOG_TAG, "battery dead received %u", packet->header.sender);
-                    // CommitBatteryDead(packet->header.sender);
-                    break;
+                    if (sendMqttByCellular("battery", packet->header.sender)) {
+                        SendMatageekResponse(packet->header.sender,
+                                             MatageekModuleActionResponseMessages::BATTERY_DEAD_RESPONSE,
+                                             MatageekResponseCode::OK, 0);
+                    }
+                } break;
                 default:
                     break;
             }
@@ -195,23 +250,33 @@ void MatageekModule::MeshMessageReceivedHandler(BaseConnection* connection, Base
 
         // Check if our module is meant and we should trigger an action
         if (packet->moduleId == vendorModuleId) {
-            if (packet->actionType == MatageekModuleActionResponseMessages::STATE_RESPONSE) {
-                logt(MATAGEEK_LOG_TAG, "Trap state came back from %u with data %u", packet->header.sender,
-                     packet->data[0]);
+            switch (packet->actionType) {
+                case MatageekModuleActionResponseMessages::STATE_RESPONSE:
+                    logt(MATAGEEK_LOG_TAG, "Trap state came back from %u with data %u", packet->header.sender,
+                         packet->data[0]);
+                    break;
+                case MatageekModuleActionResponseMessages::TRAP_FIRE_RESPONSE: {
+                    logt(MATAGEEK_LOG_TAG, "TRAP_FIRE_RESPONSE received");
+                    MatageekModuleResponse const* data = reinterpret_cast<MatageekModuleResponse const*>(packet->data);
+                    if (data->result == MatageekResponseCode::OK) trapResendCounter.isSent = true;
+                } break;
+                case MatageekModuleActionResponseMessages::BATTERY_DEAD_RESPONSE: {
+                    logt(MATAGEEK_LOG_TAG, "BATTERY_DEAD_RESPONSE received");
+                    MatageekModuleResponse const* data = reinterpret_cast<MatageekModuleResponse const*>(packet->data);
+                    if (data->result == MatageekResponseCode::OK) batteryResendCounter.isSent = true;
+                } break;
+                default:
+                    logt(MATAGEEK_LOG_TAG, "unknown response message: %u", packet->actionType);
+                    break;
             }
         }
     }
 }
 
 void MatageekModule::MeshConnectionChangedHandler(MeshConnection& connection) {
-    // If DiscoveryState is OFF, DiscoveryState never changes without manual changing
-    if (connection.IsDisconnected()) {
-        if (configuration.matageekMode == MatageekMode::SETUP) return;
-        Node* nodeModule = GetModuleById<Node>(static_cast<u32>(ModuleId::NODE));
-        if (nodeModule == nullptr) return;
-        // If disconnect event happen in detect mode, change discovery state HIGH
-        nodeModule->ChangeState(DiscoveryState::HIGH);
-    }
+    if (configuration.matageekMode == MatageekMode::SETUP) return;
+    updateEnrolledNodesFlag = true;
+    updateEnrolledNodesPassedTimeds = 0;
 }
 
 ErrorTypeUnchecked MatageekModule::SendStateMessageResponse(const NodeId& targetNodeId) const {
@@ -225,14 +290,18 @@ ErrorTypeUnchecked MatageekModule::SendStateMessageResponse(const NodeId& target
                                    reinterpret_cast<u8*>(&status), SIZEOF_MATAGEEK_MODULE_STATUS_MESSAGE, false);
 }
 
-ErrorTypeUnchecked MatageekModule::SendTrapFireMessage(const NodeId& targetNodeId) const {
+ErrorTypeUnchecked MatageekModule::SendTrapFireMessage(const NodeId& targetNodeId) {
     logt(MATAGEEK_LOG_TAG, "Trying to send trap fire message");
+    trapResendCounter.isSent = false;
+    trapResendCounter.retryCount = RETRY_COUNT;
     return SendModuleActionMessage(MessageType::MODULE_TRIGGER_ACTION, targetNodeId,
                                    MatageekModuleTriggerActionMessages::TRAP_FIRE, 0, nullptr, 0, false);
 }
 
-ErrorTypeUnchecked MatageekModule::SendBatteryDeadMessage(const NodeId& targetNodeId) const {
+ErrorTypeUnchecked MatageekModule::SendBatteryDeadMessage(const NodeId& targetNodeId) {
     logt(MATAGEEK_LOG_TAG, "Trying to send battery dead %u", targetNodeId);
+    batteryResendCounter.isSent = false;
+    batteryResendCounter.retryCount = RETRY_COUNT;
     return SendModuleActionMessage(MessageType::MODULE_TRIGGER_ACTION, targetNodeId,
                                    MatageekModuleTriggerActionMessages::BATTERY_DEAD, 0, nullptr, 0, false);
 }
@@ -240,6 +309,7 @@ ErrorTypeUnchecked MatageekModule::SendBatteryDeadMessage(const NodeId& targetNo
 void MatageekModule::SendMatageekResponse(const NodeId& toSend,
                                           const MatageekModuleActionResponseMessages& responseType,
                                           const MatageekResponseCode& result, const u8& requestHandle) {
+    logt(MATAGEEK_LOG_TAG, "Trying to send action response %u, to NodeId: %u", responseType, toSend);
     MatageekModuleResponse response;
     response.result = result;
     SendModuleActionMessage(MessageType::MODULE_ACTION_RESPONSE, toSend, responseType, requestHandle,
@@ -252,20 +322,7 @@ void MatageekModule::ChangeMatageekMode(const MatageekMode& newMode, const Clust
     if (configuration.matageekMode == newMode) return;
     configuration.matageekMode = newMode;
 
-    Node* node = GetModuleById<Node>(static_cast<u32>(ModuleId::NODE));
-    if (node == nullptr) return;
-    newMode == MatageekMode::SETUP ? node->SendEnrolledNodes(0, GS->node.configuration.nodeId)
-                                   : node->SendEnrolledNodes(clusterSize, GS->node.configuration.nodeId);
-}
-
-template <class T>
-T* MatageekModule::GetModuleById(const VendorModuleId moduleId) {
-    T* targetodule = nullptr;
-    for (auto activateModule : GS->activeModules) {
-        if (activateModule->moduleId == ModuleId::NODE) {
-            targetodule = reinterpret_cast<T*>(activateModule);
-            break;
-        }
-    }
-    return targetodule;
+    newMode == MatageekMode::SETUP
+        ? GS->node.SendEnrolledNodes(0, GS->node.configuration.nodeId)
+        : GS->node.SendEnrolledNodes(clusterSize > 0 ? clusterSize : 0, GS->node.configuration.nodeId);
 }
