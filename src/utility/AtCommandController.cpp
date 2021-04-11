@@ -49,20 +49,18 @@ bool AtCommandController::ReadResponseAndCheck(const u32& timeout, const char* s
         if (CheckMultiResponse(response, errorResponse)) { return false; }
         if (CheckMultiResponse(response, succcessResponse)) {
             if (sizeof...(returnCodes) < 1) {
-                logt("ATC", "receive: ");
-                logt("ATC", response);
-                logt("ATC", "\n");
+                logt("ATC", "receive: %s", response);
                 return true;
             }
             if (CheckResponseReturnCodes(response, returnCodes...)) {
-                logt("ATC", "receive success return Code\n");
+                logt("ATC", "receive success return Code");
                 return true;
             }
             return false;
         }
     }
     // if (timeoutCallback != nullptr) { timeoutCallback(NULL); }
-    logt("ATC", "timeout\n");
+    logt("ATC", "receive timeout: %s", succcessResponse);
     return false;
 }
 
@@ -126,9 +124,7 @@ bool AtCommandController::ReadLine() {
     readBuffer[GS->terminal.GetReadBufferOffset()] = '\0';
     // get only line feed code
     if (GS->terminal.GetReadBufferOffset() <= 0) { return false; }
-    logt("ATC", "ReadLine: ");
-    logt("ATC", readBuffer);
-    logt("ATC", "\n");
+    logt("ATC", "ReadLine: %s", readBuffer);
     FruityHal::SetPendingEventIRQ();
     GS->terminal.ClearReadBufferOffset();
     return true;
@@ -141,9 +137,7 @@ bool AtCommandController::SendAtCommandAndCheck(const char* atCommand, const u32
     const u8 atCommandLen = strlen(atCommand) + 2;
     char atCommandWithCr[atCommandLen];
     snprintf(atCommandWithCr, atCommandLen, "%s\r", atCommand);
-    logt("ATC", "Send:");
-    logt("ATC", atCommand);
-    logt("ATC", "\n");
+    logt("ATC", "AT: %s", atCommand);
     FruityHal::UartPutStringBlockingWithTimeout(atCommandWithCr);
     return ReadResponseAndCheck(timeout, succcessResponse, errorResponse, waitLineFeedCode, timeoutCallback,
                                 returnCodes...);
@@ -333,12 +327,6 @@ bool AtCommandController::SocketSend(const i8& _connectId, const u8* data, const
     char command[256];
     snprintf(command, 256, "AT+QISEND=%d,%d", _connectId, dataSize);
     if (!SendAtCommandAndCheck(command, ATCOMMAND_TIMEOUT_MS, "> ", DEFAULT_ERROR, false)) { return false; }
-    u16 ii = 0;
-    while (ii < dataSize) {
-        logt("ATC", "%c", data[ii]);
-        ++ii;
-    }
-    logt("ATC", "\n");
     FruityHal::UartPutDataBlockingWithTimeout(data, dataSize);
     if (!ReadResponseAndCheck(CONNECTION_WAIT_MS, "SEND OK")) { return false; }
     if (!ReadResponseAndCheck(CONNECTION_WAIT_MS, "+QIURC")) { return false; }
