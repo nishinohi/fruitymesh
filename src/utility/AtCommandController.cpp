@@ -329,6 +329,5 @@ bool AtCommandController::SocketSend(const i8& _connectId, const u8* data, const
     if (!SendAtCommandAndCheck(command, ATCOMMAND_TIMEOUT_MS, "> ", DEFAULT_ERROR, false)) { return false; }
     FruityHal::UartPutDataBlockingWithTimeout(data, dataSize);
     if (!ReadResponseAndCheck(CONNECTION_WAIT_MS, "SEND OK")) { return false; }
-    if (!ReadResponseAndCheck(CONNECTION_WAIT_MS, "+QIURC")) { return false; }
     return true;
 }
