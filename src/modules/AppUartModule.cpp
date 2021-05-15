@@ -75,7 +75,9 @@ void AppUartModule::ConfigurationLoadedHandler(u8* migratableConfig, u16 migrata
 }
 
 void AppUartModule::TimerEventHandler(u16 passedTimeDs) {
-    if (SHOULD_IV_TRIGGER(GS->appTimerDs, passedTimeDs, LOG_SENT_INTERVAL_DS)) {}
+    if (SHOULD_IV_TRIGGER(GS->appTimerDs, passedTimeDs, LOG_SENT_INTERVAL_DS)) {
+        if (IsConnectSmartPhone()) { SendAppLogQueue(); }
+    }
 }
 
 #ifdef TERMINAL_ENABLED
@@ -137,6 +139,7 @@ void AppUartModule::MeshMessageReceivedHandler(BaseConnection* connection, BaseC
             }
             // If there is not enough buffer, clear it
             if (TERMINAL_READ_BUFFER_LENGTH - readBufferOffset - 1 < data->partLen) {
+                logt("APPUART", "Too large command.");
                 readBufferOffset = 0;
                 return;
             }
@@ -203,12 +206,12 @@ void AppUartModule::SendAppLogQueue() {
     SendModuleActionMessage(MessageType::MODULE_ACTION_RESPONSE, partnerId,
                             AppUartModuleActionResponseMessages::RECEIVE_LOG, 0, reinterpret_cast<u8*>(&message),
                             SIZEOF_APP_UART_MODULE_TERMINAL_COMMAND_MESSAGE_STATIC + message.partLen, false);
-    // send log completely
-    if (message.partLen <= DATA_MAX_LEN || (message.partLen > DATA_MAX_LEN && remainLogLen <= DATA_MAX_LEN)) {
-        DiscardLogQueue();
+    if (remainLogLen > DATA_MAX_LEN) {
+        logRemain->sentLength += DATA_MAX_LEN;
         return;
     }
-    logRemain->sentLength += DATA_MAX_LEN;
+    // send log completely
+    DiscardLogQueue();
 }
 
 bool AppUartModule::PutAppLogQueue(const char* log, u16 length) {
