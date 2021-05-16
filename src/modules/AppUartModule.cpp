@@ -111,6 +111,11 @@ TerminalCommandHandlerReturnType AppUartModule::TerminalCommandHandler(const cha
                                         SIZEOF_APP_UART_MODULE_TERMINAL_COMMAND_MESSAGE_STATIC + commandLen, true);
                 return TerminalCommandHandlerReturnType::SUCCESS;
             }
+            if (TERMARGS(3, "log")) {
+                char log[] = "sample log message";
+                PutAppLogQueue(log, strlen(log));
+                return TerminalCommandHandlerReturnType::SUCCESS;
+            }
         }
     }
     // Must be called to allow the module to get and set the config
