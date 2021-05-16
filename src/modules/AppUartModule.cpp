@@ -173,10 +173,10 @@ void AppUartModule::MeshMessageReceivedHandler(BaseConnection* connection, BaseC
     }
 }
 
-NodeId AppUartModule::GetMeshAccessConnectionInNodeId() const {
+NodeId AppUartModule::GetMeshAccessConnectionInNodeId(bool isVirtual) const {
     MeshAccessConnections connIn = GS->cm.GetMeshAccessConnections(ConnectionDirection::DIRECTION_IN);
     if (connIn.count < 1) return NODE_ID_INVALID;
-    return connIn.handles[0].GetPartnerId();
+    return isVirtual ? connIn.handles[0].GetVirtualPartnerId() : connIn.handles[0].GetPartnerId();
 }
 
 bool AppUartModule::IsConnectSmartPhone() {
@@ -206,9 +206,9 @@ void AppUartModule::SendAppLogQueue() {
         CheckedMemcpy(message.data, &log[logRemain->sentLength], message.partLen);
     }
 
-    NodeId partnerId = GetMeshAccessConnectionInNodeId();
-    if (partnerId == NODE_ID_INVALID) return;
-    SendModuleActionMessage(MessageType::MODULE_ACTION_RESPONSE, partnerId,
+    NodeId virtualPartnerId = GetMeshAccessConnectionInNodeId(true);
+    if (virtualPartnerId == NODE_ID_INVALID) return;
+    SendModuleActionMessage(MessageType::MODULE_ACTION_RESPONSE, virtualPartnerId,
                             AppUartModuleActionResponseMessages::RECEIVE_LOG, 0, reinterpret_cast<u8*>(&message),
                             SIZEOF_APP_UART_MODULE_TERMINAL_COMMAND_MESSAGE_STATIC + message.partLen, false);
     if (remainLogLen > DATA_MAX_LEN) {
@@ -220,7 +220,7 @@ void AppUartModule::SendAppLogQueue() {
 }
 
 bool AppUartModule::PutAppLogQueue(const char* log, u16 length) {
-    if (GetMeshAccessConnectionInNodeId() == NODE_ID_INVALID) return false;
+    if (IsConnectSmartPhone() == NODE_ID_INVALID) return false;
 
     AppUartLogRemain remain = {.sentLength = 0, .logLen = length};
     if (!logQueue.Put(reinterpret_cast<u8*>(&remain), sizeof(AppUartLogRemain))) return false;

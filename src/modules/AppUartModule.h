@@ -124,7 +124,7 @@ class AppUartModule : public Module {
     TerminalCommandHandlerReturnType TerminalCommandHandler(const char* commandArgs[], u8 commandArgsSize) override;
 #endif
 
-    NodeId GetMeshAccessConnectionInNodeId() const;
+    NodeId GetMeshAccessConnectionInNodeId(bool isVirtual = false) const;
     bool IsConnectSmartPhone();
     void SendAppLogQueue();
     char* GetReadBuffer() { return readBuffer; }
