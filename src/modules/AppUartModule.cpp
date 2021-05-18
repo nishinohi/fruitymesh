@@ -219,12 +219,12 @@ void AppUartModule::SendAppLogQueue() {
 }
 
 bool AppUartModule::PutAppLogQueue(const char* log, u16 length) {
-    if (IsConnectSmartPhone() == NODE_ID_INVALID) return false;
+    if (log == NULL || length == 0 || !IsConnectSmartPhone()) return false;
 
     AppUartLogRemain remain = {.sentLength = 0, .logLen = length};
     if (!logQueue.Put(reinterpret_cast<u8*>(&remain), sizeof(AppUartLogRemain))) return false;
     if (!logQueue.Put(reinterpret_cast<u8*>(const_cast<char*>(log)), length)) {
-        logQueue.DiscardNext();
+        logQueue.DiscardLast();
         return false;
     }
     return true;
