@@ -44,9 +44,9 @@ constexpr VendorModuleId APP_UART_MODULE_ID = GET_VENDOR_MODULE_ID(0xAAAA, 1);
 
 constexpr u8 APP_UART_MODULE_CONFIG_VERSION = 1;
 
-constexpr u32 APP_UART_LOG_BUFFER_SIZE = 1024;
+constexpr u32 APP_UART_LOG_BUFFER_SIZE = 4096;
 
-constexpr u16 LOG_SENT_INTERVAL_DS = 5;
+constexpr u16 LOG_SENT_INTERVAL_DS = 1;
 
 #pragma pack(push)
 #pragma pack(1)
