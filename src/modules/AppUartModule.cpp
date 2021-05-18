@@ -184,7 +184,7 @@ bool AppUartModule::IsConnectSmartPhone() {
 }
 
 void AppUartModule::SendAppLogQueue() {
-    if (logQueue._numElements < 2) return;
+    if (logQueue._numElements < 2 || !IsConnectSmartPhone()) return;
 
     AppUartLogRemain* logRemain = reinterpret_cast<AppUartLogRemain*>(logQueue.PeekNext().data);
     char* log = reinterpret_cast<char*>(logQueue.PeekNext(1).data);
@@ -205,8 +205,7 @@ void AppUartModule::SendAppLogQueue() {
         CheckedMemcpy(message.data, &log[logRemain->sentLength], message.partLen);
     }
 
-    NodeId virtualPartnerId = GetMeshAccessConnectionInNodeId(true);
-    if (virtualPartnerId == NODE_ID_INVALID) return;
+    const NodeId virtualPartnerId = GetMeshAccessConnectionInNodeId(true);
     SendModuleActionMessage(MessageType::MODULE_ACTION_RESPONSE, virtualPartnerId,
                             AppUartModuleActionResponseMessages::RECEIVE_LOG, 0, reinterpret_cast<u8*>(&message),
                             SIZEOF_APP_UART_MODULE_TERMINAL_COMMAND_MESSAGE_STATIC + message.partLen, false);
