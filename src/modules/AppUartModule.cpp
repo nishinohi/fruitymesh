@@ -112,8 +112,7 @@ TerminalCommandHandlerReturnType AppUartModule::TerminalCommandHandler(const cha
                 return TerminalCommandHandlerReturnType::SUCCESS;
             }
             if (TERMARGS(3, "log")) {
-                char log[] = "sample log message";
-                PutAppLogQueue(log, strlen(log));
+                logt("APPUART", "sample log from terminal command");
                 return TerminalCommandHandlerReturnType::SUCCESS;
             }
         }
