@@ -87,11 +87,19 @@ class AppUartModule : public Module {
 #pragma pack(push)
 #pragma pack(1)
 
+    static constexpr int SIZEOF_APP_UART_MODULE_TERMINAL_RESPONSE_MESSAGE = 1;
+
+    typedef struct {
+        u8 commandSuccess;
+    } AppUartModuleTerminalResponseMessage;
+
+    STATIC_ASSERT_SIZE(AppUartModuleTerminalResponseMessage, SIZEOF_APP_UART_MODULE_TERMINAL_RESPONSE_MESSAGE);
+
     static constexpr int SIZEOF_APP_UART_MODULE_TERMINAL_COMMAND_MESSAGE_STATIC = 3;
     static constexpr int SIZEOF_APP_UART_MODULE_TERMINAL_COMMAND_MESSAGE =
         MAX_MESH_PACKET_SIZE - SIZEOF_CONN_PACKET_MODULE_VENDOR;
-    static constexpr int DATA_MAX_LEN = MAX_MESH_PACKET_SIZE - SIZEOF_CONN_PACKET_MODULE_VENDOR -
-                                        SIZEOF_APP_UART_MODULE_TERMINAL_COMMAND_MESSAGE_STATIC;
+    static constexpr int DATA_MAX_LEN =
+        SIZEOF_APP_UART_MODULE_TERMINAL_COMMAND_MESSAGE - SIZEOF_APP_UART_MODULE_TERMINAL_COMMAND_MESSAGE_STATIC;
     typedef struct {
         // Insert values here
         MessageType splitHeader;

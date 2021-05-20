@@ -40,6 +40,11 @@ AppUartModule::AppUartModule() : Module(APP_UART_MODULE_ID, "appuart"), logQueue
 
     // Enable the logtag for our vendor module template
     GS->logger.EnableTag("APPUART");
+    // If MACONN is active, the log will be output on the packet transmission itself, so the application log will be
+    // sent forever.
+#if IS_ACTIVE(APP_UART)
+    GS->logger.DisableTag("MACONN");
+#endif
 
     // Save configuration to base class variables
     // sizeof configuration must be a multiple of 4 bytes
@@ -139,36 +144,47 @@ void AppUartModule::MeshMessageReceivedHandler(BaseConnection* connection, BaseC
             // invalid buffer state
             if (readBufferOffset == 0 && data->splitCount > 0) {
                 readBufferOffset = 0;
+                AppUartModuleTerminalResponseMessage message = {.commandSuccess = 0};
+                SendModuleActionMessage(MessageType::MODULE_ACTION_RESPONSE, packet->header.sender,
+                                        AppUartModuleActionResponseMessages::TERMINAL_RETURN_TYPE, 0,
+                                        reinterpret_cast<u8*>(&message),
+                                        SIZEOF_APP_UART_MODULE_TERMINAL_RESPONSE_MESSAGE, false);
                 return;
             }
             // If there is not enough buffer, clear it
             if (TERMINAL_READ_BUFFER_LENGTH - readBufferOffset - 1 < data->partLen) {
                 logt("APPUART", "Too large command.");
                 readBufferOffset = 0;
+                AppUartModuleTerminalResponseMessage message = {.commandSuccess = 0};
+                SendModuleActionMessage(MessageType::MODULE_ACTION_RESPONSE, packet->header.sender,
+                                        AppUartModuleActionResponseMessages::TERMINAL_RETURN_TYPE, 0,
+                                        reinterpret_cast<u8*>(&message),
+                                        SIZEOF_APP_UART_MODULE_TERMINAL_RESPONSE_MESSAGE, false);
                 return;
             }
             if ((readBufferOffset == 0 && data->splitCount == 0) || (readBufferOffset > 0 && data->splitCount > 0)) {
                 CheckedMemcpy(&(readBuffer[readBufferOffset]), data->data, data->partLen);
                 readBufferOffset += data->partLen;
-                if (data->splitHeader != MessageType::SPLIT_WRITE_CMD_END) return;
 
+                AppUartModuleTerminalResponseMessage message = {.commandSuccess = 1};
+                SendModuleActionMessage(MessageType::MODULE_ACTION_RESPONSE, packet->header.sender,
+                                        AppUartModuleActionResponseMessages::TERMINAL_RETURN_TYPE, 0,
+                                        reinterpret_cast<u8*>(&message),
+                                        SIZEOF_APP_UART_MODULE_TERMINAL_RESPONSE_MESSAGE, false);
+
+                if (data->splitHeader != MessageType::SPLIT_WRITE_CMD_END) return;
 #if IS_ACTIVE(LOGGING)
                 char temp[data->partLen + 1];
                 CheckedMemcpy(temp, data->data, data->partLen);
                 temp[data->partLen] = '\0';
                 logt("APPUART", "Got command one message with %s", temp);
 #endif
-
                 lineToReadAvailable = true;
                 GS->terminal.CheckAndProcessLine();
                 lineToReadAvailable = false;
                 readBufferOffset = 0;
             }
         }
-        // else if (packet->actionType == AppUartModuleTriggerActionMessages::SEND_LOG)
-        // {
-        //     logt("TMOD", "Got command two message");
-        // }
     }
 }
 
