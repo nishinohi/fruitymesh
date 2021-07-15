@@ -774,8 +774,9 @@ void Terminal::SeggerRttPutChar(char character)
 void Terminal::AppUartCheckAndProcessLine()
 {
     AppUartModule* appUartModule = reinterpret_cast<AppUartModule*>(GS->node.GetModuleById(APP_UART_MODULE_ID));
-    if (!appUartModule->GetLineToReadAvailable()) return;
-    
+    if (!appUartModule->GetLineToReadAvailable())
+        return;
+
     readBufferOffset = appUartModule->GetReadBufferOffset();
     CheckedMemcpy(readBuffer, appUartModule->GetReadBuffer(), readBufferOffset);
     // App Uart readBuffer does not contain \r or \n
@@ -787,14 +788,16 @@ void Terminal::AppUartCheckAndProcessLine()
     lineToReadAvailable = false;
 }
 
-void Terminal::AppUartPutString(const char* message) {
-    if (strlen(message) == 0) return;
+void Terminal::AppUartPutString(const char* message)
+{
+    if (strlen(message) == 0)
+        return;
     AppUartModule* appUartModule = (AppUartModule*)(GS->node.GetModuleById(APP_UART_MODULE_ID));
     // If the sending process itself generates a log, it will send a log of the sending process forever.
-    if (!appUartModule) return;
+    if (!appUartModule)
+        return;
     appUartModule->PutAppLogQueue(message, strlen(message));
 }
-
 
 #endif
 
