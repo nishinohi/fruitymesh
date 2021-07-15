@@ -64,7 +64,7 @@ struct AppUartLogRemain {
 #pragma pack(pop)
 
 class AppUartModule : public Module {
-   private:
+private:
     u16 readBufferOffset = 0;
     char readBuffer[TERMINAL_READ_BUFFER_LENGTH];
     bool lineToReadAvailable = false;
@@ -72,7 +72,7 @@ class AppUartModule : public Module {
 
     PacketQueue logQueue;
 
-   public:
+public:
     enum AppUartModuleTriggerActionMessages {
         TERMINAL_COMMAND = 0,
         SEND_LOG = 1,
@@ -96,10 +96,10 @@ class AppUartModule : public Module {
     STATIC_ASSERT_SIZE(AppUartModuleTerminalResponseMessage, SIZEOF_APP_UART_MODULE_TERMINAL_RESPONSE_MESSAGE);
 
     static constexpr int SIZEOF_APP_UART_MODULE_TERMINAL_COMMAND_MESSAGE_STATIC = 3;
-    static constexpr int SIZEOF_APP_UART_MODULE_TERMINAL_COMMAND_MESSAGE =
-        MAX_MESH_PACKET_SIZE - SIZEOF_CONN_PACKET_MODULE_VENDOR;
-    static constexpr int DATA_MAX_LEN =
-        SIZEOF_APP_UART_MODULE_TERMINAL_COMMAND_MESSAGE - SIZEOF_APP_UART_MODULE_TERMINAL_COMMAND_MESSAGE_STATIC;
+    static constexpr int SIZEOF_APP_UART_MODULE_TERMINAL_COMMAND_MESSAGE
+        = MAX_MESH_PACKET_SIZE - SIZEOF_CONN_PACKET_MODULE_VENDOR;
+    static constexpr int DATA_MAX_LEN
+        = SIZEOF_APP_UART_MODULE_TERMINAL_COMMAND_MESSAGE - SIZEOF_APP_UART_MODULE_TERMINAL_COMMAND_MESSAGE_STATIC;
     typedef struct {
         // Insert values here
         MessageType splitHeader;
@@ -125,8 +125,8 @@ class AppUartModule : public Module {
 
     void TimerEventHandler(u16 passedTimeDs) override;
 
-    void MeshMessageReceivedHandler(BaseConnection* connection, BaseConnectionSendData* sendData,
-                                    ConnPacketHeader const* packetHeader) override;
+    void MeshMessageReceivedHandler(
+        BaseConnection* connection, BaseConnectionSendData* sendData, ConnPacketHeader const* packetHeader) override;
 
 #ifdef TERMINAL_ENABLED
     TerminalCommandHandlerReturnType TerminalCommandHandler(const char* commandArgs[], u8 commandArgsSize) override;
