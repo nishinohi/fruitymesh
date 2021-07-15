@@ -38,7 +38,6 @@
 #include "IoModule.h"
 #include "MeshAccessModule.h"
 #include "VendorTemplateModule.h"
-#include "AppUartModule.h"
 #include "GlobalState.h"
 
 // This is an example featureset for the nRF52832
@@ -100,7 +99,6 @@ u32 InitializeModules_github_dev_nrf52(bool createModule)
     //Each Vendor module needs a RecordStorage id if it wants to store a persistent configuration
     //see the section for VendorModules in RecordStorage.h for more info
     size += GS->InitializeModule<VendorTemplateModule>(createModule, RECORD_STORAGE_RECORD_ID_VENDOR_MODULE_CONFIG_BASE + 0);
-    size += GS->InitializeModule<AppUartModule>(createModule, RECORD_STORAGE_RECORD_ID_VENDOR_MODULE_CONFIG_BASE + 0);
 
     size += GS->InitializeModule<MeshAccessModule>(createModule);
     return size;
